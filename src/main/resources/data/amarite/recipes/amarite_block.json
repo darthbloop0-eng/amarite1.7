@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "A": {
+      "item": "amarite:amarite_shard"
+    }
+  },
+  "pattern": [
+    "AA",
+    "AA"
+  ],
+  "result": {
+    "item": "amarite:amarite_block"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "xyz.amymialee.mialib.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "AnvilScreenHandlerMixin",
+    "EnchantCommandMixin",
+    "EnchantmentHelperMixin",
+    "EnchantRandomlyLootFunctionMixin",
+    "ItemStackMixin",
+    "MobEntityMixin",
+    "PlayerEntityMixin",
+    "accessors.BeaconBlockEntityAccessor",
+    "interfaces.BeaconBeamSegmentMixin",
+    "interfaces.ItemGroupMixin",
+    "interfaces.ItemMixin",
+    "interfaces.ItemStackMixin",
+    "interfaces.PlayerEntityMixin",
+    "interfaces.TextMixin"
+  ],
+  "client": [
+    "client.BeaconBlockEntityRendererMixin",
+    "client.HeldItemFeatureRendererMixin",
+    "client.HeldItemRendererMixin",
+    "client.ItemEntityRendererMixin",
+    "client.ItemRendererMixin",
+    "client.MinecraftClientMixin",
+    "client.PlayerEntityRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "refmap": "amarite-refmap.json"
+}

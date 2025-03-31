@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cross",
+  "textures": {
+    "cross": "amarite:block/fresh_amarite_bud"
+  }
+}

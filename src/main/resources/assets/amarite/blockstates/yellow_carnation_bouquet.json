@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "half=lower": {
+      "model": "amarite:block/yellow_carnation_bouquet_bottom"
+    },
+    "half=upper": {
+      "model": "amarite:block/yellow_carnation_bouquet_top"
+    }
+  }
+}

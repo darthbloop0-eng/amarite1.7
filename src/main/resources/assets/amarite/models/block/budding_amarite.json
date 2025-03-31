@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "end": "amarite:block/budding_amarite",
+    "side": "amarite:block/amarite_block_side"
+  }
+}

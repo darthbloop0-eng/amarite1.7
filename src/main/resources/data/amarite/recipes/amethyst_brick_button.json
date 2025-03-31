@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "item": "amarite:chiseled_amethyst"
+    }
+  ],
+  "result": {
+    "item": "amarite:amethyst_brick_button"
+  }
+}

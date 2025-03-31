@@ -1,0 +1,109 @@
+plugins {
+	id 'maven-publish'
+	alias libs.plugins.quilt.loom
+}
+
+base {
+	archivesName = project.archives_base_name
+}
+
+version = "$project.version+${libs.versions.minecraft.get()}"
+group = project.maven_group
+
+repositories {
+	mavenLocal()
+	maven {
+		name "ladysnakeReleases"
+		url "https://maven.ladysnake.org/releases"
+	}
+	maven {
+		url "https://maven.jamieswhiteshirt.com/libs-release"
+		content {
+			includeGroup "com.jamieswhiteshirt"
+		}
+	}
+	maven {
+		name = "TerraformersMC"
+		url = "https://maven.terraformersmc.com/"
+	}
+}
+
+loom {
+	// Loom and Loader both use this block in order to gather more information about your mod.
+	mods {
+		// This should match your mod id.
+		"amarite" {
+			// Tell Loom about each source set used by your mod here. This ensures that your mod's classes are properly transformed by Loader.
+			sourceSet("main")
+			// If you shade (directly include classes, not JiJ) a dependency into your mod, include it here using one of these methods:
+			// dependency("com.example.shadowedmod:1.2.3")
+			// configuration("exampleShadedConfigurationName")
+		}
+	}
+}
+
+// All the dependencies are declared at gradle/libs.version.toml and referenced with "libs.<id>"
+// See https://docs.gradle.org/current/userguide/platforms.html for information on how version catalogs work.
+dependencies {
+	minecraft libs.minecraft
+	mappings variantOf(libs.quilt.mappings) { classifier 'intermediary-v2' }
+	modImplementation libs.quilt.loader
+	modImplementation libs.bundles.quilted.fabric.api
+	modImplementation(files("libs/lodestonedav-0.0.4+1.20.1.jar"))
+	implementation "dev.onyxstudios.cardinal-components-api:cardinal-components-base:${cca_version}"
+	implementation "dev.onyxstudios.cardinal-components-api:cardinal-components-entity:${cca_version}"
+	implementation "dev.onyxstudios.cardinal-components-api:cardinal-components-block:${cca_version}"
+	include modImplementation("com.jamieswhiteshirt:reach-entity-attributes:$rea_version")
+	modImplementation "dev.emi:trinkets:${trinkets_version}"}
+
+processResources {
+	inputs.properties 'version': version, 'group': project.group
+
+	filesMatching('quilt.mod.json') {
+		expand 'version': version, 'group': project.group
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.encoding = 'UTF-8'
+	// Minecraft 1.20.5 (24w14a) upwards uses Java 21.
+	it.options.release = 21
+}
+
+java {
+	// Still required by IDEs such as Eclipse and Visual Studio Code
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	// If this mod is going to be a library, then it should also generate Javadocs in order to aid with development.
+	// Uncomment this line to generate them.
+	// withJavadocJar()
+}
+
+// If you plan to use a different file for the license, don't forget to change the file name here!
+jar {
+	from('LICENSE.md') {
+		rename { "${it}_${base.archivesName.get()}" }
+	}
+}
+
+// Configure the maven publication
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}

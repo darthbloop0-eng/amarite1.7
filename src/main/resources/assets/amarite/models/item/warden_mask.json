@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "amarite:item/mask/warden"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "mialib:head": 1
+      },
+      "model": "amarite:mask/warden_mask_worn"
+    }
+  ]
+}

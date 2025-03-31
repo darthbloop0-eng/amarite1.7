@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/button_pressed",
+  "textures": {
+    "texture": "amarite:block/chiseled_amethyst"
+  }
+}

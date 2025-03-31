@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "A": {
+      "item": "amarite:amarite_shard"
+    },
+    "B": {
+      "item": "amarite:amarite_block"
+    },
+    "G": {
+      "item": "minecraft:gold_ingot"
+    },
+    "L": {
+      "item": "minecraft:leather"
+    }
+  },
+  "pattern": [
+    "BGA",
+    "G G",
+    "LGB"
+  ],
+  "result": {
+    "item": "amarite:amarite_disc"
+  }
+}

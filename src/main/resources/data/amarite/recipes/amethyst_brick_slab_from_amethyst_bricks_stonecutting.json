@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:stonecutting",
+  "count": 2,
+  "ingredient": {
+    "item": "amarite:amethyst_bricks"
+  },
+  "result": "amarite:amethyst_brick_slab"
+}

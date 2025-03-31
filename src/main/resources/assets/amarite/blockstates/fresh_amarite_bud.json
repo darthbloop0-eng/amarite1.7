@@ -1,0 +1,30 @@
+{
+  "variants": {
+    "facing=down": {
+      "model": "amarite:block/fresh_amarite_bud",
+      "x": 180
+    },
+    "facing=east": {
+      "model": "amarite:block/fresh_amarite_bud",
+      "x": 90,
+      "y": 90
+    },
+    "facing=north": {
+      "model": "amarite:block/fresh_amarite_bud",
+      "x": 90
+    },
+    "facing=south": {
+      "model": "amarite:block/fresh_amarite_bud",
+      "x": 90,
+      "y": 180
+    },
+    "facing=up": {
+      "model": "amarite:block/fresh_amarite_bud"
+    },
+    "facing=west": {
+      "model": "amarite:block/fresh_amarite_bud",
+      "x": 90,
+      "y": 270
+    }
+  }
+}

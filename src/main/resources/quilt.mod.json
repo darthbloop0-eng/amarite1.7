@@ -1,0 +1,87 @@
+{
+    "schema_version": 1,
+    "quilt_loader": {
+        "group": "${group}",
+        "id": "amarite",
+        "version": "1.7.0+1.20.1",
+        "metadata": {
+            "name": "Amarite",
+            "description": "Party Planning and Poison",
+            "contributors": {
+							"AmyMialee": "Lead Developer",
+							"Luxintrus": "Artist",
+							"8onfire": "Artist",
+							"KodaConstella": "Graphic Designer",
+							"Winsweep": "Designer",
+							"PunchmadeDav": "Porter"
+            },
+            "contact": {
+							"homepage": "https://guns.lol/dav"
+						},
+            "icon": "assets/amarite/icon.png"
+        },
+        "intermediate_mappings": "net.fabricmc:intermediary",
+        "entrypoints": {
+					"init": "xyz.amymialee.amarite.Amarite",
+					"client_init": "xyz.amymialee.amarite.AmariteClient",
+					"fabric-datagen": "xyz.amymialee.amarite.AmariteDatagen",
+					"cardinal-components-block": "xyz.amymialee.amarite.Amarite",
+					"cardinal-components-entity": [
+						"xyz.amymialee.amarite.Amarite",
+						"xyz.amymialee.mialib.MiaLib"
+					],
+					"client": "xyz.amymialee.mialib.MiaLibClient",
+					"main": "xyz.amymialee.mialib.MiaLib",
+					"server": "xyz.amymialee.mialib.MiaLibServer"
+        },
+			"depends": [
+				{
+					"id": "trinkets",
+					"versions": "*"
+				},
+				{
+					"id": "quilted_fabric_api",
+					"versions": "*"
+				},
+				{
+					"id": "minecraft",
+					"versions": "1.20.1"
+				}
+			]
+		},
+	"cardinal-components": [
+		"mialib:holding",
+		"mialib:identifier_cooldown",
+		"amarite:beacon",
+		"amarite:dash",
+		"amarite:double_dash",
+		"amarite:accumulate",
+		"amarite:malignancy",
+		"amarite:disc",
+		"amarite:pylon",
+		"amarite:budded"
+	],
+	"quilt_loom": {
+		"injected_interfaces": {
+			"net/minecraft/class_1792": [
+				"xyz/amymialee/mialib/interfaces/MItem"
+			],
+			"net/minecraft/class_1761": [
+				"xyz/amymialee/mialib/interfaces/MItemGroup"
+			],
+			"net/minecraft/class_1799": [
+				"xyz/amymialee/mialib/interfaces/MItemStack"
+			],
+			"net/minecraft/class_1657": [
+				"xyz/amymialee/mialib/interfaces/MPlayerEntity"
+			],
+			"net/minecraft/class_2561": [
+				"xyz/amymialee/mialib/interfaces/MText"
+			]
+		}
+    },
+	"mixin": [
+		"mialib.mixins.json",
+		"amarite.mixins.json"
+	]
+}

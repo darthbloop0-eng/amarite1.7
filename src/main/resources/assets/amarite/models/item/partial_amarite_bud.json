@@ -1,0 +1,19 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "amarite:block/partial_amarite_bud"
+  },
+  "display": {
+    "head": {
+      "translation": [ 0, 14, -5 ]
+    }
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "block": 1
+      },
+      "model": "amarite:item/partial_amarite_bud_block"
+    }
+  ]
+}

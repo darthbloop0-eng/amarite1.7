@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "item": "amarite:amarite_block"
+    }
+  ],
+  "result": {
+    "count": 4,
+    "item": "amarite:amarite_shard"
+  }
+}

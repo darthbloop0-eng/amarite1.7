@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "A": {
+      "item": "amarite:amarite_block"
+    },
+    "B": {
+      "item": "minecraft:gold_block"
+    },
+    "G": {
+      "item": "minecraft:gold_ingot"
+    },
+    "N": {
+      "item": "minecraft:gold_nugget"
+    }
+  },
+  "pattern": [
+    " GN",
+    "GAG",
+    "BG "
+  ],
+  "result": {
+    "item": "amarite:amarite_mirror"
+  }
+}

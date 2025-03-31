@@ -1,0 +1,147 @@
+{
+  "item.amarite.disc_damage": {
+    "sounds": [
+      "amarite:disc_damage"
+    ],
+    "subtitle": "subtitles.item.amarite.disc_damage"
+  },
+  "item.amarite.disc_hit": {
+    "sounds": [
+      "amarite:disc_hit1",
+      "amarite:disc_hit2"
+    ],
+    "subtitle": "subtitles.item.amarite.disc_hit"
+  },
+  "item.amarite.disc_throw": {
+    "sounds": [
+      "amarite:disc_throw1",
+      "amarite:disc_throw2",
+      "amarite:disc_throw3",
+      "amarite:disc_throw4"
+    ],
+    "subtitle": "subtitles.item.amarite.disc_throw"
+  },
+  "item.amarite.disc_pickup1": {
+    "sounds": [
+      "amarite:disc_pickup1"
+    ],
+    "subtitle": "subtitles.item.amarite.disc_pickup"
+  },
+  "item.amarite.disc_pickup2": {
+    "sounds": [
+      "amarite:disc_pickup2"
+    ],
+    "subtitle": "subtitles.item.amarite.disc_pickup"
+  },
+  "item.amarite.disc_pickup3": {
+    "sounds": [
+      "amarite:disc_pickup3"
+    ],
+    "subtitle": "subtitles.item.amarite.disc_pickup"
+  },
+  "item.amarite.disc_rebound": {
+    "sounds": [
+      "amarite:disc_rebound"
+    ],
+    "subtitle": "subtitles.item.amarite.disc_rebound"
+  },
+  "item.amarite.mirror_extract": {
+    "sounds": [
+      "amarite:mirror_extract"
+    ],
+    "subtitle": "subtitles.item.amarite.mirror_extract"
+  },
+  "item.amarite.mirror_use": {
+    "sounds": [
+      "amarite:mirror_use"
+    ],
+    "subtitle": "subtitles.item.amarite.mirror_use"
+  },
+  "item.amarite.sword_charge": {
+    "sounds": [
+      "amarite:sword_charge"
+    ],
+    "subtitle": "subtitles.item.amarite.sword_charge"
+  },
+  "item.amarite.sword_block": {
+    "sounds": [
+      "amarite:sword_block"
+    ],
+    "subtitle": "subtitles.item.amarite.sword_block"
+  },
+  "item.amarite.sword_dash": {
+    "sounds": [
+      "amarite:sword_dash1",
+      "amarite:sword_dash2",
+      "amarite:sword_dash3",
+      "amarite:sword_dash4"
+    ],
+    "subtitle": "subtitles.item.amarite.sword_dash"
+  },
+  "item.amarite.sword_accumulate": {
+    "sounds": [
+      "amarite:sword_accumulate"
+    ],
+    "subtitle": "subtitles.item.amarite.sword_accumulate"
+  },
+  "item.amarite.mask_offset": {
+    "sounds": [
+      "random/click"
+    ],
+    "subtitle": "subtitles.item.amarite.mask_offset"
+  },
+  "item.amarite.infinite_toggle": {
+    "sounds": [
+      "random/click"
+    ],
+    "subtitle": "subtitles.item.amarite.infinite_toggle"
+  },
+  "block.amarite.spark_activate": {
+    "sounds": [
+      "block/beacon/activate"
+    ],
+    "subtitle": "subtitles.block.amarite.spark_activate"
+  },
+  "block.amarite.spark_ambient": {
+    "sounds": [
+      {
+        "attenuation_distance": 7,
+        "name": "block/beacon/ambient",
+        "volume": 0.9
+      }
+    ],
+    "subtitle": "subtitles.block.amarite.spark_ambient"
+  },
+  "block.amarite.spark_deactivate": {
+    "sounds": [
+      "block/beacon/deactivate"
+    ],
+    "subtitle": "subtitles.block.amarite.spark_deactivate"
+  },
+  "block.amarite.amarite_forms": {
+    "sounds": [
+      "item/bucket/empty_lava1",
+      "item/bucket/empty_lava2",
+      "item/bucket/empty_lava3"
+    ],
+    "subtitle": "subtitles.block.amarite.amarite_forms"
+  },
+  "block.amarite.amarite_decays": {
+    "sounds": [
+      "random/fizz"
+    ],
+    "subtitle": "subtitles.block.amarite.amarite_decays"
+  },
+  "amarite.pacificus": {
+    "sounds": [
+      "amarite:pacificus"
+    ],
+    "subtitle": "subtitles.amarite.pacificus"
+  },
+  "block.amarite.win_plushie": {
+    "sounds": [
+      "amarite:squeak"
+    ],
+    "subtitle": "subtitles.block.amarite.win_plushie"
+  }
+}

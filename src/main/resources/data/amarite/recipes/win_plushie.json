@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "key": {
+    "A": {
+      "item": "amarite:amarite_block"
+    },
+    "B": {
+      "item": "minecraft:black_wool"
+    },
+    "P": {
+      "item": "minecraft:purple_wool"
+    },
+    "W": {
+      "item": "minecraft:white_wool"
+    }
+  },
+  "pattern": [
+    "PPP",
+    "WAW",
+    "BBB"
+  ],
+  "result": {
+    "item": "amarite:win_plushie"
+  }
+}

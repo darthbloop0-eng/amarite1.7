@@ -1,0 +1,101 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": {
+    "layer0": "amarite:item/amarite_longsword",
+    "layer1": "amarite:item/amarite_longsword_overlay"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "mialib:third_person_left_hand": 1
+      },
+      "model": "amarite:item/amarite_longsword_handheld"
+    },
+    {
+      "predicate": {
+        "mialib:third_person_right_hand": 1
+      },
+      "model": "amarite:item/amarite_longsword_handheld"
+    },
+    {
+      "predicate": {
+        "mialib:first_person_left_hand": 1
+      },
+      "model": "amarite:item/amarite_longsword_handheld"
+    },
+    {
+      "predicate": {
+        "mialib:first_person_right_hand": 1
+      },
+      "model": "amarite:item/amarite_longsword_handheld"
+    },
+    {
+      "predicate": {
+        "mialib:fixed": 1
+      },
+      "model": "amarite:item/amarite_longsword_handheld"
+    },
+    {
+      "predicate": {
+        "mialib:third_person_left_hand": 1,
+        "amarite:blocking": 1
+      },
+      "model": "amarite:item/amarite_longsword_blocking"
+    },
+    {
+      "predicate": {
+        "mialib:third_person_right_hand": 1,
+        "amarite:blocking": 1
+      },
+      "model": "amarite:item/amarite_longsword_blocking"
+    },
+    {
+      "predicate": {
+        "mialib:first_person_left_hand": 1,
+        "amarite:blocking": 1
+      },
+      "model": "amarite:item/amarite_longsword_blocking"
+    },
+    {
+      "predicate": {
+        "mialib:first_person_right_hand": 1,
+        "amarite:blocking": 1
+      },
+      "model": "amarite:item/amarite_longsword_blocking"
+    },
+    {
+      "predicate": {
+        "mialib:third_person_left_hand": 1,
+        "amarite:accumulate": 1
+      },
+      "model": "amarite:item/amarite_longsword_accumulate"
+    },
+    {
+      "predicate": {
+        "mialib:third_person_right_hand": 1,
+        "amarite:accumulate": 1
+      },
+      "model": "amarite:item/amarite_longsword_accumulate"
+    },
+    {
+      "predicate": {
+        "mialib:first_person_left_hand": 1,
+        "amarite:accumulate": 1
+      },
+      "model": "amarite:item/amarite_longsword_accumulate"
+    },
+    {
+      "predicate": {
+        "mialib:first_person_right_hand": 1,
+        "amarite:accumulate": 1
+      },
+      "model": "amarite:item/amarite_longsword_accumulate"
+    },
+    {
+      "predicate": {
+        "amarite:malignant": 1
+      },
+      "model": "amarite:item/amarite_longsword_malignant"
+    }
+  ]
+}

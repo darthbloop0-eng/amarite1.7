@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "amarite:item/mask/demon"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "mialib:head": 1
+      },
+      "model": "amarite:mask/demon_mask_worn"
+    }
+  ]
+}

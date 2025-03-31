@@ -1,0 +1,36 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "xyz.amymialee.amarite.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "BeaconBlockEntityMixin",
+    "BuddingAmethystMixin",
+    "DamageRecordMixin",
+    "DamageSourceMixin",
+    "DamageTrackerMixin",
+    "LivingEntityMixin",
+    "NoteBlockMixin",
+    "PlayerEntityMixin",
+    "ScreenHandlerMixin",
+    "ServerItemCooldownManagerMixin",
+    "ServerPlayNetworkHandlerMixin",
+    "SourcedDamageSourceMixin"
+  ],
+  "client": [
+    "BlockRenderManagerAccessor",
+    "client.BipedEntityModelMixin",
+    "client.ClientPlayerEntityMixin",
+    "client.EntityRendererMixin",
+    "client.HeadFeatureRendererMixin",
+    "client.HeldItemFeatureRendererMixin",
+    "client.HeldItemRendererMixin",
+    "client.InGameHudMixin",
+    "client.PlayerEntityRendererMixin"
+  ],
+  "plugin": "xyz.amymialee.amarite.util.MixinPlugin",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "refmap": "amarite-refmap.json"
+}

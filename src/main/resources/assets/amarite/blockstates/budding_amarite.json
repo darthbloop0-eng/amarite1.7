@@ -1,0 +1,30 @@
+{
+  "variants": {
+    "facing=down": {
+      "model": "amarite:block/budding_amarite",
+      "x": 180
+    },
+    "facing=east": {
+      "model": "amarite:block/budding_amarite",
+      "x": 90,
+      "y": 90
+    },
+    "facing=north": {
+      "model": "amarite:block/budding_amarite",
+      "x": 90
+    },
+    "facing=south": {
+      "model": "amarite:block/budding_amarite",
+      "x": 90,
+      "y": 180
+    },
+    "facing=up": {
+      "model": "amarite:block/budding_amarite"
+    },
+    "facing=west": {
+      "model": "amarite:block/budding_amarite",
+      "x": 90,
+      "y": 270
+    }
+  }
+}
