@@ -15,49 +15,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # The source code uses Minecraft's internal (intermediary) names, e.g. class_1291.
-      # Instead of remapping 100+ files, tell the build that the "readable" names ARE the
-      # intermediary names, so the code compiles as-is.
-      - name: Create identity mappings
-        shell: bash
-        run: |
-          curl -fsSL -o inter.jar https://maven.fabricmc.net/net/fabricmc/intermediary/1.20.1/intermediary-1.20.1-v2.jar
-          python3 - <<'PY'
-          import re, zipfile
-          src = zipfile.ZipFile('inter.jar').read('mappings/mappings.tiny').decode('utf-8').split('\n')
-          cmap = {}
-          for l in src[1:]:
-              p = l.split('\t')
-              if p[0] == 'c' and len(p) >= 3 and p[2]:
-                  cmap[p[1]] = p[2]
-          def conv(desc):
-              return re.sub(r'L([^;]+);', lambda m: 'L' + cmap.get(m.group(1), m.group(1)) + ';', desc)
-          out = ['tiny\t2\t0\tintermediary\tnamed']
-          for l in src[1:]:
-              p = l.split('\t')
-              if p[0] == 'c' and len(p) >= 3 and p[2]:
-                  out.append('c\t%s\t%s' % (p[2], p[2]))
-              elif len(p) >= 5 and p[0] == '' and p[1] in ('m', 'f') and p[4]:
-                  out.append('\t%s\t%s\t%s\t%s' % (p[1], conv(p[2]), p[4], p[4]))
-          with zipfile.ZipFile('libs/identity-mappings.jar', 'w') as z:
-              z.writestr('mappings/mappings.tiny', '\n'.join(out) + '\n')
-          print('header:', out[0], '| lines:', len(out))
-          PY
-
-      - name: Patch build.gradle
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          s = open('build.gradle').read()
-          old = "mappings variantOf(libs.quilt.mappings) { classifier 'intermediary-v2' }"
-          assert old in s, 'mappings line not found'
-          s = s.replace(old, 'mappings files("libs/identity-mappings.jar")')
-          s = s.replace('release = 21', 'release = 17').replace('VERSION_21', 'VERSION_17')
-          s = s.replace('withSourcesJar()', '')
-          s += '\ntasks.withType(Jar).configureEach { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }\n'
-          open('build.gradle', 'w').write(s)
-          PY
-          rm -f src/main/resources/amarite-refmap.json
+      - name: Prepare sources
+        run: python3 ci/port.py prepare
 
       - name: Build
         shell: bash
@@ -66,10 +25,8 @@ jobs:
           ./gradlew build --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Summarize errors
-        if: failure()
-        shell: bash
-        run: |
-          { echo '```'; grep -E "error:|What went wrong|Execution failed" -A3 build.log | head -200; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+        if: always()
+        run: python3 ci/port.py summarize
 
       - uses: actions/upload-artifact@v4
         if: always()
