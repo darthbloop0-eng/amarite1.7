@@ -1,1 +1,82 @@
+name: Build Amarite
 
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The source code uses Minecraft's internal (intermediary) names, e.g. class_1291.
+      # Instead of remapping 100+ files, tell the build that the "readable" names ARE the
+      # intermediary names, so the code compiles as-is.
+      - name: Create identity mappings
+        shell: bash
+        run: |
+          curl -fsSL -o inter.jar https://maven.fabricmc.net/net/fabricmc/intermediary/1.20.1/intermediary-1.20.1-v2.jar
+          python3 - <<'PY'
+          import zipfile
+          src = zipfile.ZipFile('inter.jar').read('mappings/mappings.tiny').decode('utf-8').split('\n')
+          out = []
+          for i, line in enumerate(src):
+              if i == 0:
+                  out.append(line + '\tnamed')
+                  continue
+              p = line.split('\t')
+              if p[0] == 'c' and len(p) >= 3:
+                  out.append(line + '\t' + p[2])
+              elif len(p) >= 5 and p[0] == '' and p[1] in ('m', 'f'):
+                  out.append(line + '\t' + p[4])
+              else:
+                  out.append(line)
+          with zipfile.ZipFile('libs/identity-mappings.jar', 'w') as z:
+              z.writestr('mappings/mappings.tiny', '\n'.join(out))
+          print('header:', out[0])
+          PY
+
+      - name: Patch build.gradle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          s = open('build.gradle').read()
+          old = "mappings variantOf(libs.quilt.mappings) { classifier 'intermediary-v2' }"
+          assert old in s, 'mappings line not found'
+          s = s.replace(old, 'mappings files("libs/identity-mappings.jar")')
+          s = s.replace('release = 21', 'release = 17').replace('VERSION_21', 'VERSION_17')
+          s = s.replace('withSourcesJar()', '')
+          s += '\ntasks.withType(Jar).configureEach { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }\n'
+          open('build.gradle', 'w').write(s)
+          PY
+          rm -f src/main/resources/amarite-refmap.json
+
+      - name: Build
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: Summarize errors
+        if: failure()
+        shell: bash
+        run: |
+          { echo '```'; grep -E "error:|What went wrong|Execution failed" -A3 build.log | head -200; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: amarite-jar
+          path: build/libs/*.jar
