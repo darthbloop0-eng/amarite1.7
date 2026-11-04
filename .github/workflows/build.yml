@@ -23,23 +23,25 @@ jobs:
         run: |
           curl -fsSL -o inter.jar https://maven.fabricmc.net/net/fabricmc/intermediary/1.20.1/intermediary-1.20.1-v2.jar
           python3 - <<'PY'
-          import zipfile
+          import re, zipfile
           src = zipfile.ZipFile('inter.jar').read('mappings/mappings.tiny').decode('utf-8').split('\n')
-          out = []
-          for i, line in enumerate(src):
-              if i == 0:
-                  out.append(line + '\tnamed')
-                  continue
-              p = line.split('\t')
-              if p[0] == 'c' and len(p) >= 3:
-                  out.append(line + '\t' + p[2])
-              elif len(p) >= 5 and p[0] == '' and p[1] in ('m', 'f'):
-                  out.append(line + '\t' + p[4])
-              else:
-                  out.append(line)
+          cmap = {}
+          for l in src[1:]:
+              p = l.split('\t')
+              if p[0] == 'c' and len(p) >= 3 and p[2]:
+                  cmap[p[1]] = p[2]
+          def conv(desc):
+              return re.sub(r'L([^;]+);', lambda m: 'L' + cmap.get(m.group(1), m.group(1)) + ';', desc)
+          out = ['tiny\t2\t0\tintermediary\tnamed']
+          for l in src[1:]:
+              p = l.split('\t')
+              if p[0] == 'c' and len(p) >= 3 and p[2]:
+                  out.append('c\t%s\t%s' % (p[2], p[2]))
+              elif len(p) >= 5 and p[0] == '' and p[1] in ('m', 'f') and p[4]:
+                  out.append('\t%s\t%s\t%s\t%s' % (p[1], conv(p[2]), p[4], p[4]))
           with zipfile.ZipFile('libs/identity-mappings.jar', 'w') as z:
-              z.writestr('mappings/mappings.tiny', '\n'.join(out))
-          print('header:', out[0])
+              z.writestr('mappings/mappings.tiny', '\n'.join(out) + '\n')
+          print('header:', out[0], '| lines:', len(out))
           PY
 
       - name: Patch build.gradle
