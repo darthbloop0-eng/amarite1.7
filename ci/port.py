@@ -103,7 +103,7 @@ public final class ParticleBuilders {
     private float r = 1.0F, g = 1.0F, b = 1.0F;
     private float scaleStart = 0.25F, scaleEnd = 0.0F;
     private float spinOffset = 0.0F, spin = 0.0F;
-    private double randomMotion = 0.0;
+    private double randomMotion = 0.0, randomMotionY = 0.0;
     private boolean hasMotion = false;
     private double mx, my, mz;
     private boolean hasOffset = false;
@@ -125,7 +125,8 @@ public final class ParticleBuilders {
     public ParticleBuilders setScale(float start, float end) { scaleStart = start; scaleEnd = end; return this; }
     public ParticleBuilders setSpinOffset(float v) { spinOffset = v; return this; }
     public ParticleBuilders setSpin(float v) { spin = v; return this; }
-    public ParticleBuilders randomMotion(double v) { randomMotion = v; return this; }
+    public ParticleBuilders randomMotion(double v) { randomMotion = v; randomMotionY = v; return this; }
+    public ParticleBuilders randomMotion(double xz, double y) { randomMotion = xz; randomMotionY = y; return this; }
     public ParticleBuilders setMotion(double x, double y, double z) { hasMotion = true; mx = x; my = y; mz = z; return this; }
     public ParticleBuilders addMotion(double x, double y, double z) { hasMotion = true; mx += x; my += y; mz += z; return this; }
     public ParticleBuilders randomOffset(double xz) { hasOffset = true; offXZ = xz; offY = xz; return this; }
@@ -138,7 +139,7 @@ public final class ParticleBuilders {
             .setTransparencyData(GenericParticleData.create(alphaStart, alphaEnd).setEasing(alphaEasing).build())
             .setColorData(ColorParticleData.create(r, g, b, r, g, b).setCoefficient(colorCoefficient).setEasing(colorEasing).build())
             .setSpinData(SpinParticleData.create(spin).setSpinOffset(spinOffset).setEasing(spinEasing).build());
-        if (randomMotion > 0.0) pb.setRandomMotion(randomMotion);
+        if (randomMotion > 0.0 || randomMotionY > 0.0) pb.setRandomMotion(randomMotion, randomMotionY);
         if (hasMotion) pb.setMotion(mx, my, mz);
         if (hasOffset) pb.setRandomOffset(offXZ, offY);
         return pb;
@@ -309,9 +310,18 @@ class Mappings:
         return self.cls(named).replace('/', '.').replace('$', '.')
 
     def method(self, cnamed, mnamed, nparams=None, desc_has=None):
+        if isinstance(mnamed, (list, tuple)):
+            for alt in mnamed:
+                try:
+                    return self.method(cnamed, alt, nparams, desc_has)
+                except KeyError:
+                    pass
+            raise KeyError('method %s.%s not found' % (cnamed, mnamed))
         ci = self.cls(cnamed)
         c = [mi for (mi, mn, d) in self.methods[ci]
              if mn == mnamed and (nparams is None or n_params(d) == nparams) and (desc_has is None or desc_has in d)]
+        if len(c) > 1:
+            c = [sorted(c, key=lambda x: int(x.split('_')[1]))[0]]
         if len(c) != 1:
             raise KeyError('method %s.%s nparams=%s desc_has=%s -> %s' % (cnamed, mnamed, nparams, desc_has, c))
         return c[0]
@@ -531,7 +541,7 @@ public final class FabricItemGroupBuilder {
 def item_groups(Q):
     B = 'net/minecraft/item/ItemGroup$Builder'
     vals = {
-        '@ICON@': Q.method(B, 'icon'), '@DNAME@': Q.method(B, 'displayName'),
+        '@ICON@': Q.method(B, 'icon'), '@DNAME@': Q.method(B, ['displayName', 'name', 'title']),
         '@ENTRIES@': Q.method(B, 'entries'), '@BUILD@': Q.method(B, 'build'),
         '@ADD@': Q.method('net/minecraft/item/ItemGroup$Entries', 'add', nparams=1, desc_has='class_1799'),
         '@TRANS@': Q.method('net/minecraft/text/Text', 'translatable', nparams=1),
@@ -549,11 +559,6 @@ def item_groups(Q):
     for p in java_files():
         edit(p, lambda t: t.replace('net.fabricmc.fabric.api.client.itemgroup.FabricItemGroupBuilder',
                                     'xyz.amymialee.amarite.compat.FabricItemGroupBuilder'))
-    edit(os.path.join(SRC, 'xyz/amymialee/amarite/Amarite.java'),
-         lambda t: re.sub(r'\n\s*\.method_7753\("[^"]*"\)', '', t))
-    for rel in ('amarite/items/AmariteLongswordItem.java', 'amarite/items/AmariteDiscItem.java'):
-        edit(os.path.join(SRC, 'xyz/amymialee/' + rel),
-             lambda t: remove_method(t, r'\n[ \t]*public void method_7850\(class_1761 group, class_2371<class_1799> stacks\) \{')[0])
     log('item group adapter written')
 
 def migrate_members(fields_new, methods_new, Qnew):
@@ -597,7 +602,7 @@ def migrate_members(fields_new, methods_new, Qnew):
                     if fn.endswith('_KEY') and nm == fn[:-4]:
                         cands = [c for c in cands if Qnew.c_i2n.get(c[0], '').endswith('/RegistryKeys')] or cands
                     elif old.c_i2n.get(oc, '').endswith('/Registry'):
-                        cands = [c for c in cands if Qnew.c_i2n.get(c[0], '').endswith('/Registries')] or cands
+                        cands = [c for c in cands if Qnew.c_i2n.get(c[0], '').endswith('/Registries')]
                     break
             cands = [c for c in cands if '$' not in c[0]]
             if len(cands) != 1:
@@ -648,11 +653,213 @@ def cleanup_missing_imports(classes):
     if gone:
         log('CLASSES THAT NO LONGER EXIST IN 1.20.1 (imports removed):', dict(gone))
 
+# ----------------------------------------------------------------------------- round 3 rules
+def remove_call(text, start_token):
+    i = text.find(start_token)
+    if i < 0:
+        return text
+    j = text.index('(', i + len(start_token) - 1)
+    depth, k = 1, j + 1
+    while k < len(text) and depth:
+        if text[k] == '(':
+            depth += 1
+        elif text[k] == ')':
+            depth -= 1
+        k += 1
+    while k < len(text) and text[k] in ' \t;':
+        k += 1
+    ls = text.rfind('\n', 0, i)
+    return text[:ls + 1 if ls >= 0 else 0] + text[k:].lstrip('\n')
+
+def remove_annotated_method(text, marker):
+    i = text.find(marker)
+    if i < 0:
+        return text
+    start = max(text.rfind('@Inject', 0, i), text.rfind('@WrapOperation', 0, i), text.rfind('@Redirect', 0, i))
+    if start < 0:
+        return text
+    ls = text.rfind('\n', 0, start)
+    b = text.index('{', i)
+    depth, k = 1, b + 1
+    while k < len(text) and depth:
+        if text[k] == '{':
+            depth += 1
+        elif text[k] == '}':
+            depth -= 1
+        k += 1
+    return text[:ls + 1] + text[k:].lstrip('\n')
+
+MIRROR_STUB = '''package xyz.amymialee.amarite.screens;
+
+import net.minecraft.class_1661;
+import net.minecraft.class_2561;
+import net.minecraft.class_332;
+import net.minecraft.class_465;
+
+/** Stub: the original beacon-style mirror GUI still has to be ported to 1.20 rendering. */
+public class MirrorScreen extends class_465<MirrorScreenHandler> {
+   public MirrorScreen(MirrorScreenHandler handler, class_1661 inventory, class_2561 title) {
+      super(handler, inventory, title);
+   }
+
+   protected void method_2389(class_332 context, float delta, int mouseX, int mouseY) {
+   }
+}
+'''
+COMPAT_UTIL = '''package xyz.amymialee.amarite.compat;
+
+public final class Compat {
+    private Compat() { }
+    public static int packRgb(int r, int g, int b) { return (r << 16) | (g << 8) | b; }
+}
+'''
+
+def sp(path):
+    return os.path.join(SRC, 'xyz/amymialee/' + path)
+
+def model_transform(Qn, old):
+    new_i = Qn.cls('net/minecraft/client/render/model/json/ModelTransformationMode')
+    old_i = old.cls('net/minecraft/client/render/model/json/ModelTransformation$Mode')
+    new_simple = new_i.split('/')[-1]
+    old_f = {fi: fn for (fi, fn, d) in old.fields[old_i]}
+    new_f = {fn: fi for (fi, fn, d) in Qn.fields[new_i]}
+    fmap = {fi: new_f[fn] for fi, fn in old_f.items() if fn in new_f}
+    def f(t):
+        t = t.replace('net.minecraft.class_809.class_811', 'net.minecraft.' + new_simple)
+        t = t.replace('Lnet/minecraft/class_809$class_811;', 'L' + new_i + ';')
+        if new_simple != 'class_811':
+            t = re.sub(r'\bclass_811\.(field_\d+)\b', lambda m: new_simple + '.' + fmap.get(m.group(1), m.group(1)), t)
+            t = re.sub(r'(?<![\w.$])class_811\b', new_simple, t)
+        else:
+            t = re.sub(r'\bclass_811\.(field_\d+)\b', lambda m: 'class_811.' + fmap.get(m.group(1), m.group(1)), t)
+        return t
+    for p in java_files():
+        edit(p, f)
+    log('ModelTransformation.Mode ->', new_i, '(%d constants mapped)' % len(fmap))
+
+def rotation_axis(Qn, old):
+    RA = 'net/minecraft/util/math/RotationAxis'
+    rot = Qn.method(RA, 'rotationDegrees', nparams=1)
+    ra = Qn.cls(RA).split('/')[-1]
+    vec = old.cls('net/minecraft/util/math/Vec3f')
+    old_f = {fi: fn for (fi, fn, d) in old.fields[vec]}
+    deg = old.method('net/minecraft/util/math/Vec3f', 'getDegreesQuaternion')
+    pat = re.compile(r'class_1160\.(field_\d+)\.%s\(' % deg)
+    def f(t):
+        return pat.sub(lambda m: '%s.%s.%s(' % (ra, Qn.field(RA, old_f[m.group(1)]), rot), t)
+    for p in java_files():
+        edit(p, f)
+    log('Vec3f rotation -> RotationAxis done')
+
+def vanished_renames(Qn, old, all_f, all_m):
+    text = ''.join(read(p) for p in java_files())
+    ids_m = set('method_' + x for x in re.findall(r'\bmethod_(\d+)\b', text))
+    ids_f = set('field_' + x for x in re.findall(r'\bfield_(\d+)\b', text))
+    om = {mi: (ci, mn, d) for ci, lst in old.methods.items() for (mi, mn, d) in lst}
+    of = {fi: (ci, fn, d) for ci, lst in old.fields.items() for (fi, fn, d) in lst}
+    ALIAS = {'offsetType': ['offset']}
+    renames, report = {}, []
+    for ids, table, new_tab, kind in ((ids_m, om, Qn.methods, 'm'), (ids_f, of, Qn.fields, 'f')):
+        for i in sorted(ids):
+            if i in (all_m if kind == 'm' else all_f):
+                continue
+            if i not in table:
+                report.append('%s (unknown in 1.19.2)' % i)
+                continue
+            ci, mn, d = table[i]
+            lst = new_tab.get(ci)
+            if lst is None:
+                report.append('%s = %s.%s (class gone)' % (i, ci.split('/')[-1], mn))
+                continue
+            names = [mn] + ALIAS.get(mn, [])
+            c = [x[0] for x in lst if x[1] in names and (kind == 'f' or n_params(x[2]) == n_params(d))]
+            if len(c) == 1:
+                renames[i] = c[0]
+            else:
+                report.append('%s = %s.%s (%d matches in 1.20.1)' % (i, Qn.c_i2n.get(ci, ci).split('/')[-1], mn, len(c)))
+    if renames:
+        pat = re.compile(r'\b(%s)\b' % '|'.join(re.escape(k) for k in renames))
+        for p in java_files():
+            edit(p, lambda t: pat.sub(lambda m: renames[m.group(1)], t))
+    log('vanished members auto-renamed:', len(renames))
+    if report:
+        log('VANISHED MEMBERS WITHOUT AN EQUIVALENT (%d):' % len(report))
+        for r in report[:70]:
+            log('   ', r)
+
+def misc_rewrites(Qn, methods_new):
+    getworld = 'method_37908' if 'method_37908' in methods_new.get('net/minecraft/class_1297', ()) else Qn.method('net/minecraft/entity/Entity', 'getWorld')
+    isof = Qn.method('net/minecraft/entity/damage/DamageSource', 'isOf', nparams=1)
+    dtypes = Qn.cls('net/minecraft/entity/damage/DamageTypes').split('/')[-1]
+    sound_of = Qn.method('net/minecraft/sound/SoundEvent', 'of', nparams=1)
+    for p in java_files():
+        def f(t, p=p):
+            t = re.sub(r'\.field_6002\b(?!\s*=[^=])', '.%s()' % getworld, t)
+            t = re.sub(r'(?<![\w.])field_6002\b(?!\s*=[^=])', '%s()' % getworld, t)
+            if '/mixin/' in p.replace('\\', '/'):
+                t = re.sub(r'\((class_\d+)\)this\b', r'(\1)(Object)this', t)
+            t = re.sub(r'Objects\.equals\((\w+)\.field_5841,\s*"amarite\.(\w+)"\)',
+                       lambda m: '%s.%s(xyz.amymialee.amarite.registry.AmariteDamageTypes.%s)' % (m.group(1), isof, m.group(2).upper()), t)
+            t = re.sub(r'(\w+) == (%s\.field_\d+)' % dtypes, r'\1.%s(\2)' % isof, t)
+            t = t.replace('public class_2596<?> method_18002()', 'public class_2596<net.minecraft.class_2602> method_18002()')
+            t = re.sub(r'RenderSystem\.(?:disable|enable)Texture\(\);\s*', '', t)
+            t = t.replace('class_3532.method_15383(', 'xyz.amymialee.amarite.compat.Compat.packRgb(')
+            if 'extends class_897<' in t:
+                t = t.replace('public class_2960 getTexture(', 'public class_2960 method_3931(')
+            return t
+        edit(p, f)
+    for rel in ('amarite/registry/AmariteItems.java', 'mialib/MRegistry.java'):
+        edit(sp(rel), lambda t: re.sub(r'\.group\(\s*[A-Za-z_][\w.\[\]]*\s*\)', '', t))
+    edit(sp('amarite/registry/AmariteItems.java'), lambda t: remove_call(t, 'ResourceLoaderEvents.END_DATA_PACK_RELOAD.register('))
+    edit(sp('amarite/client/DiscEntityRenderer.java'),
+         lambda t: t.replace('vertexConsumers, disc.method_5628())', 'vertexConsumers, disc.%s(), disc.method_5628())' % getworld))
+    edit(sp('mialib/MRegistry.java'), lambda t: t.replace('new class_3414(id)', 'class_3414.%s(id)' % sound_of)
+         .replace('class_2378.method_10230(registry,', 'class_2378.method_10230((class_2378<Object>)(Object)registry,'))
+    edit(sp('mialib/MRegistry.java'), lambda t: re.sub(r'[ \t]*DEFAULT_REGISTRIES\.put\(class_\d+\.class, class_2378\.field_\d+\);\n', '', t))
+    edit(sp('amarite/blocks/YellowCarnationPlantBlock.java'), lambda t: t.replace('method_9651(class_1922 ', 'method_9651(class_4538 '))
+    edit(sp('amarite/items/MaskItem.java'), lambda t: t if 'method_7685' in t else t.replace(
+        'public class MaskItem extends TrinketItem implements class_5151 {',
+        'public class MaskItem extends TrinketItem implements class_5151 {\n   public net.minecraft.class_1304 method_7685() {\n      return net.minecraft.class_1304.field_6169;\n   }\n', 1))
+    edit(sp('amarite/mixin/BuddingAmethystMixin.java'), lambda t: remove_annotated_method(t, 'amarite$nonBreaking'))
+    # pressure plate / button / food recipe need new constructor arguments
+    bst = Qn.jname('net/minecraft/block/BlockSetType') + '.' + Qn.field('net/minecraft/block/BlockSetType', 'STONE')
+    edit(sp('amarite/blocks/AmethystPressurePlateBlock.java'), lambda t: t.replace('super(settings);', 'super(settings, %s);' % bst))
+    edit(sp('amarite/blocks/AmethystButtonBlock.java'),
+         lambda t: remove_method(t.replace('super(wooden, settings);', 'super(settings, %s, 20, wooden);' % bst),
+                                 r'\n[ \t]*protected class_3414 method_9712\(boolean powered\) \{')[0])
+    cat = Qn.jname('net/minecraft/recipe/book/CraftingRecipeCategory')
+    def food(t):
+        t = t.replace('public AmariteFoodRecipe(class_2960 identifier) {\n      super(identifier);',
+                      'public AmariteFoodRecipe(class_2960 identifier, %s category) {\n      super(identifier, category);' % cat)
+        t = t.replace('public boolean matches(@NotNull class_1715 craftingInventory, class_1937 world)',
+                      'public boolean method_8115(@NotNull net.minecraft.class_8566 craftingInventory, class_1937 world)')
+        t = t.replace('public class_1799 craft(@NotNull class_1715 craftingInventory)',
+                      'public class_1799 method_8116(@NotNull net.minecraft.class_8566 craftingInventory, net.minecraft.class_5455 registryManager)')
+        return t
+    edit(sp('amarite/recipes/AmariteFoodRecipe.java'), food)
+    # armor material: new abstract methods take ArmorItem.Type
+    T = 'net/minecraft/item/ArmorItem$Type'
+    vals = {'@T@': Qn.jname(T), '@SLOT@': Qn.method(T, 'getEquipmentSlot'),
+            '@DUR@': Qn.method('net/minecraft/item/ArmorMaterial', 'getDurability', nparams=1, desc_has=Qn.cls(T)),
+            '@PROT@': Qn.method('net/minecraft/item/ArmorMaterial', 'getProtection', nparams=1, desc_has=Qn.cls(T))}
+    ins = ('public class MArmorMaterial implements class_1741 {\n'
+           '   public int @DUR@(@T@ type) {\n      return this.armorDurability.apply(type.@SLOT@());\n   }\n\n'
+           '   public int @PROT@(@T@ type) {\n      return this.protection.apply(type.@SLOT@());\n   }\n')
+    for k, v in vals.items():
+        ins = ins.replace(k, v)
+    edit(sp('mialib/templates/MArmorMaterial.java'),
+         lambda t: t if '@DUR@' in t or ins.split('\n')[1] in t else t.replace('public class MArmorMaterial implements class_1741 {\n', ins, 1))
+    write(sp('amarite/screens/MirrorScreen.java'), MIRROR_STUB)
+    write(sp('amarite/compat/Compat.java'), COMPAT_UTIL)
+    log('misc 1.20 rewrites applied')
+
 def prepare():
     src = get_inter_tiny()
     make_identity(src)
     patch_gradle()
     classes, fields_new, methods_new = inter_members(src)
+    all_f = set().union(*fields_new.values())
+    all_m = set().union(*methods_new.values())
     remove_datagen()
     for rel in ('xyz/amymialee/amarite/compat/AmariteArsenalCompat.java',
                 'xyz/amymialee/amarite/compat/AmariteLongswordFeatureRenderer.java',
@@ -663,24 +870,33 @@ def prepare():
         edit(p, strip_arsenal)
     apply_refmap()
     if os.path.exists('src/main/resources/amarite-refmap.json'):
-        os.remove('src/main/resources/amarite-refmap.json')   # Loom generates a fresh one
+        os.remove('src/main/resources/amarite-refmap.json')
     for p in java_files():
         edit(p, material_fix)
     write(os.path.join(SRC, 'xyz/amymialee/amarite/compat/ParticleBuilders.java'), PARTICLE_SHIM)
     write(os.path.join(SRC, 'xyz/amymialee/amarite/compat/Animator.java'), ANIMATOR_SHIM)
-    Qn = None
+    # item-group related edits that need no mapping lookups
+    for p in java_files():
+        edit(p, lambda t: t.replace('net.fabricmc.fabric.api.client.itemgroup.FabricItemGroupBuilder', 'xyz.amymialee.amarite.compat.FabricItemGroupBuilder'))
+    edit(sp('amarite/Amarite.java'), lambda t: re.sub(r'\n\s*\.method_7753\("[^"]*"\)', '', t))
+    for rel in ('amarite/items/AmariteLongswordItem.java', 'amarite/items/AmariteDiscItem.java'):
+        edit(sp(rel), lambda t: remove_method(t, r'\n[ \t]*public void method_7850\(class_1761 group, class_2371<class_1799> stacks\) \{')[0])
+    Qn = old = None
     try:
         Qn = Mappings(quilt_jar(QM_NEW))
+        old = Mappings(quilt_jar(latest_1192()))
     except Exception as e:
-        log('WARN could not load 1.20.1 quilt mappings:', repr(e))
-    if Qn:
-        for step in (damage_types, item_groups):
+        log('WARN could not load quilt mappings:', repr(e))
+    if Qn and old:
+        for step, args in ((damage_types, (Qn,)), (item_groups, (Qn,)), (model_transform, (Qn, old)),
+                           (rotation_axis, (Qn, old)), (misc_rewrites, (Qn, methods_new))):
             try:
-                step(Qn)
+                step(*args)
             except Exception as e:
                 log('WARN step %s failed: %r' % (step.__name__, e))
         try:
             migrate_members(fields_new, methods_new, Qn)
+            vanished_renames(Qn, old, all_f, all_m)
         except Exception as e:
             log('WARN member migration failed: %r' % (e,))
     cleanup_missing_imports(classes)
@@ -691,7 +907,10 @@ def prepare():
         added += fix_file(p, idx, unresolved)
     log('imports added:', added)
     if unresolved:
-        log('UNRESOLVED class tokens:', sorted(unresolved))
+        names = {}
+        if old:
+            names = {u.split(' ')[0]: old.c_i2n.get('net/minecraft/' + u.split(' ')[0], '?') for u in unresolved}
+        log('UNRESOLVED class tokens (1.19.2 name):', names or sorted(unresolved))
     write('prepare.out', '\n'.join(OUT) + '\n')
 
 
@@ -736,6 +955,25 @@ def summarize():
         out.append('')
         for (msg, sym), locs in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:120]:
             out.append('%4d x  %s%s   e.g. %s' % (len(locs), msg, (' [' + sym + ']') if sym else '', locs[0]))
+
+    try:
+        import glob
+        oj = sorted(glob.glob('quilt-1.19.2*.jar'))
+        if oj and errs:
+            om = Mappings(oj[-1])
+            ids = set(re.findall(r'\b((?:method|field)_\d+)\b', ' '.join(s for s in errs.values())))
+            tab = {}
+            for ci, lst in list(om.methods.items()) + list(om.fields.items()):
+                for (mi, mn, d) in lst:
+                    if mi in ids:
+                        tab[mi] = '%s.%s' % (om.c_i2n.get(ci, ci).split('/')[-1], mn)
+            if tab:
+                out.append('')
+                out.append('--- WHAT THE MISSING NAMES WERE IN 1.19.2 ---')
+                for k, v in sorted(tab.items())[:60]:
+                    out.append('%s = %s' % (k, v))
+    except Exception as e:
+        out.append('(hint lookup failed: %r)' % (e,))
     try:
         prep = read('prepare.out').strip().split('\n')
         out.append('')
