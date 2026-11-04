@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """CI helper for porting Amarite to 1.20.1.   usage: port.py prepare | summarize"""
-import io, json, os, re, sys, zipfile, urllib.request, collections
+import io, json, os, re, sys, zipfile, urllib.request, urllib.error, collections
+
+OUT = []
+
+def log(*a):
+    msg = ' '.join(str(x) for x in a)
+    print(msg)
+    OUT.append(msg)
+
 
 SRC = 'src/main/java'
 INTER_URL = 'https://maven.fabricmc.net/net/fabricmc/intermediary/1.20.1/intermediary-1.20.1-v2.jar'
@@ -68,10 +76,8 @@ def patch_gradle():
     s = s.replace('release = 21', 'release = 17').replace('VERSION_21', 'VERSION_17')
     s = s.replace('withSourcesJar()', '')
     s += '\ntasks.withType(Jar).configureEach { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }\n'
-    s += "tasks.withType(JavaCompile).configureEach { options.compilerArgs += ['-Xmaxerrs', '5000'] }\n"
+    s += "tasks.withType(JavaCompile).configureEach { options.compilerArgs += ['-Xmaxerrs', '5000', '-XDshould-stop.ifError=FLOW'] }\n"
     write('build.gradle', s)
-    if os.path.exists('src/main/resources/amarite-refmap.json'):
-        os.remove('src/main/resources/amarite-refmap.json')
 
 # ----------------------------------------------------------------------------- 3. shims
 PARTICLE_SHIM = '''package xyz.amymialee.amarite.compat;
@@ -241,21 +247,453 @@ def remove_datagen():
         write(p, s2)
         print('removed datagen entrypoint')
 
+# ----------------------------------------------------------------------------- Quilt mappings lookup
+QM_NEW = '1.20.1+build.23'
+MAVEN = 'https://maven.quiltmc.org/repository/release/org/quiltmc/quilt-mappings/'
+
+def fetch(url, dest):
+    if os.path.exists(dest):
+        return dest
+    last = None
+    for u in (url, url.replace('+', '%2B')):
+        try:
+            urllib.request.urlretrieve(u, dest)
+            return dest
+        except urllib.error.URLError as e:
+            last = e
+    raise RuntimeError('download failed: %s (%s)' % (url, last))
+
+def quilt_jar(version):
+    return fetch('%s%s/quilt-mappings-%s-intermediary-v2.jar' % (MAVEN, version, version), 'quilt-%s.jar' % version)
+
+def latest_1192():
+    fetch(MAVEN + 'maven-metadata.xml', 'qm-meta.xml')
+    vs = re.findall(r'<version>(1\.19\.2\+build\.(\d+))</version>', read('qm-meta.xml'))
+    return max(vs, key=lambda t: int(t[1]))[0]
+
+def n_params(desc):
+    inner = desc[1:desc.index(')')]
+    return len(re.findall(r'\[*(?:[BCDFIJSZ]|L[^;]+;)', inner))
+
+class Mappings:
+    """Quilt mappings (intermediary -> named)."""
+    def __init__(self, jarpath):
+        text = zipfile.ZipFile(jarpath).read('mappings/mappings.tiny').decode('utf-8')
+        lines = text.split('\n')
+        ns = lines[0].split('\t')[3:]
+        ii, ni = ns.index('intermediary'), ns.index('named')
+        self.c_n2i, self.c_i2n = {}, {}
+        self.fields, self.methods = {}, {}
+        cur = None
+        for l in lines[1:]:
+            p = l.split('\t')
+            if p[0] == 'c':
+                names = p[1:]
+                ci = names[ii]
+                cn = names[ni] if ni < len(names) and names[ni] else ci
+                self.c_n2i[cn] = ci
+                self.c_i2n[ci] = cn
+                cur = ci
+                self.fields[cur] = []
+                self.methods[cur] = []
+            elif len(p) >= 5 and p[0] == '' and p[1] in ('m', 'f') and cur:
+                names = p[3:]
+                mi = names[ii]
+                mn = names[ni] if ni < len(names) and names[ni] else mi
+                (self.methods if p[1] == 'm' else self.fields)[cur].append((mi, mn, p[2]))
+
+    def cls(self, named):
+        return self.c_n2i[named]
+
+    def jname(self, named):
+        return self.cls(named).replace('/', '.').replace('$', '.')
+
+    def method(self, cnamed, mnamed, nparams=None, desc_has=None):
+        ci = self.cls(cnamed)
+        c = [mi for (mi, mn, d) in self.methods[ci]
+             if mn == mnamed and (nparams is None or n_params(d) == nparams) and (desc_has is None or desc_has in d)]
+        if len(c) != 1:
+            raise KeyError('method %s.%s nparams=%s desc_has=%s -> %s' % (cnamed, mnamed, nparams, desc_has, c))
+        return c[0]
+
+    def field(self, cnamed, fnamed):
+        ci = self.cls(cnamed)
+        c = [fi for (fi, fn, d) in self.fields[ci] if fn == fnamed]
+        if len(c) != 1:
+            raise KeyError('field %s.%s -> %s' % (cnamed, fnamed, c))
+        return c[0]
+
+def inter_members(src):
+    """1.20.1 intermediary: class set, class -> field names, class -> method names."""
+    fields, methods, classes = {}, {}, set()
+    cur = None
+    for l in src[1:]:
+        p = l.split('\t')
+        if p[0] == 'c' and len(p) >= 3:
+            cur = p[2]
+            classes.add(cur)
+            fields[cur], methods[cur] = set(), set()
+        elif len(p) >= 5 and p[0] == '' and cur:
+            if p[1] == 'f':
+                fields[cur].add(p[4])
+            elif p[1] == 'm':
+                methods[cur].add(p[4])
+    return classes, fields, methods
+
+# ----------------------------------------------------------------------------- text-edit helpers
+def remove_method(text, header_regex):
+    m = re.search(header_regex, text)
+    if not m:
+        return text, False
+    depth, i = 1, m.end()
+    while i < len(text) and depth:
+        if text[i] == '{':
+            depth += 1
+        elif text[i] == '}':
+            depth -= 1
+        i += 1
+    return text[:m.start()] + text[i:], True
+
+def edit(path, fn):
+    if not os.path.exists(path):
+        return
+    t = read(path)
+    n = fn(t)
+    if n != t:
+        write(path, n)
+
+def delete_file(rel):
+    p = os.path.join(SRC, rel)
+    if os.path.exists(p):
+        os.remove(p)
+        log('removed', rel)
+
+def drop_mixin_entry(name):
+    p = 'src/main/resources/amarite.mixins.json'
+    s = read(p)
+    s2 = re.sub(r'\s*"%s",?' % re.escape(name), '', s)
+    s2 = re.sub(r',(\s*[\]}])', r'\1', s2)
+    write(p, s2)
+
+# ----------------------------------------------------------------------------- refmap
+def apply_refmap():
+    p = 'src/main/resources/amarite-refmap.json'
+    if not os.path.exists(p):
+        log('WARN no refmap')
+        return
+    maps = json.loads(read(p))['mappings']
+    n = 0
+    for cls, entries in maps.items():
+        f = os.path.join(SRC, cls + '.java')
+        if not os.path.exists(f):
+            continue
+        t = read(f)
+        for k, v in entries.items():
+            lit = '"%s"' % k
+            if lit in t:
+                t = t.replace(lit, '"%s"' % v)
+                n += 1
+        write(f, t)
+    log('refmap strings applied:', n)
+
+# ----------------------------------------------------------------------------- feature rewrites
+DT = {'budding': ('no_anger',), 'dash': ('no_anger',), 'accumulate': ('bypasses_armor',),
+      'malignancy': ('bypasses_armor', 'bypasses_shield', 'witch_resistant_to'),
+      'disc': ('bypasses_armor', 'bypasses_shield', 'witch_resistant_to')}
+
+DAMAGE_TEMPLATE = '''package xyz.amymialee.amarite.registry;
+
+import net.minecraft.class_1282;
+import net.minecraft.class_1297;
+import org.jetbrains.annotations.NotNull;
+import xyz.amymialee.amarite.Amarite;
+
+public interface AmariteDamageTypes {
+@CONSTS@
+   private static @RK@<@DTY@> key(String path) {
+      return @RK@.@OF@(@RKS@.@FDT@, Amarite.id(path));
+   }
+
+   private static class_1282 make(@RK@<@DTY@> key, class_1297... a) {
+      class_1297 ref = null;
+      for (class_1297 e : a) {
+         if (e != null) {
+            ref = e;
+            break;
+         }
+      }
+      if (ref == null) {
+         throw new IllegalStateException("damage source needs at least one entity to find the world");
+      }
+      net.minecraft.class_1937 world = ref.field_6002;
+      if (a.length == 1) {
+         return world.@GDS@().@C1@(key, a[0]);
+      }
+      if (a.length >= 2) {
+         return world.@GDS@().@C2@(key, a[0], a[1]);
+      }
+      return world.@GDS@().@C0@(key);
+   }
+
+   static class_1282 buddingFor(@NotNull class_1297 victim) {
+      return victim.field_6002.@GDS@().@C0@(BUDDING);
+   }
+@FUNCS@
+   static void init() {
+   }
+}
+'''
+
+def damage_types(Q):
+    RK = Q.jname('net/minecraft/registry/RegistryKey')
+    DTY = Q.jname('net/minecraft/entity/damage/DamageType')
+    RKS = Q.jname('net/minecraft/registry/RegistryKeys')
+    DS = 'net/minecraft/entity/damage/DamageSources'
+    vals = {
+        '@RK@': RK, '@DTY@': DTY, '@RKS@': RKS,
+        '@OF@': Q.method('net/minecraft/registry/RegistryKey', 'of', nparams=2, desc_has='class_2960'),
+        '@FDT@': Q.field('net/minecraft/registry/RegistryKeys', 'DAMAGE_TYPE'),
+        '@GDS@': Q.method('net/minecraft/world/World', 'getDamageSources'),
+        '@C0@': Q.method(DS, 'create', nparams=1),
+        '@C1@': Q.method(DS, 'create', nparams=2),
+        '@C2@': Q.method(DS, 'create', nparams=3),
+    }
+    consts, funcs = '', ''
+    for k in DT:
+        consts += '   %s<%s> %s = key("%s");\n' % (RK, DTY, k.upper(), k)
+        funcs += '   static class_1282 %s(@NotNull class_1297... a) {\n      return make(%s, a);\n   }\n' % (k, k.upper())
+    java = DAMAGE_TEMPLATE.replace('@CONSTS@', consts).replace('@FUNCS@', funcs)
+    for k, v in vals.items():
+        java = java.replace(k, v)
+    write(os.path.join(SRC, 'xyz/amymialee/amarite/registry/AmariteDamageTypes.java'), java)
+    tags = collections.defaultdict(list)
+    for k, ts in DT.items():
+        write('src/main/resources/data/amarite/damage_type/%s.json' % k,
+              json.dumps({'message_id': 'amarite.' + k, 'scaling': 'never', 'exhaustion': 0.0}, indent=2) + '\n')
+        for t in ts:
+            tags[t].append('amarite:' + k)
+    for t, v in tags.items():
+        write('src/main/resources/data/minecraft/tags/damage_type/%s.json' % t,
+              json.dumps({'replace': False, 'values': v}, indent=2) + '\n')
+    for p in java_files():
+        edit(p, lambda t: re.sub(r'(\w+)\.method_5643\(AmariteDamageTypes\.budding\(\)',
+                                 r'\1.method_5643(AmariteDamageTypes.buddingFor(\1)', t))
+    base = 'xyz/amymialee/amarite/mixin/'
+    edit(os.path.join(SRC, base + 'DamageSourceMixin.java'),
+         lambda t: t.replace('@Mixin({class_1282.class, class_1285.class, class_1284.class, class_1286.class})',
+                             '@Mixin({class_1282.class})'))
+    edit(os.path.join(SRC, base + 'SourcedDamageSourceMixin.java'),
+         lambda t: t.replace('@Mixin({class_1285.class, class_1284.class})', '@Mixin({class_1282.class})')
+                    .replace(' extends DamageSourceMixin', '')
+                    .replace('nameless$removeName', 'nameless$removeAttackerName'))
+    log('damage types rewritten for 1.20.1')
+
+GROUP_TEMPLATE = '''package xyz.amymialee.amarite.compat;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import net.minecraft.class_1761;
+import net.minecraft.class_1799;
+import net.minecraft.class_2960;
+
+/** Adapter: the old FabricItemGroupBuilder API on top of the 1.20 item group system. */
+public final class FabricItemGroupBuilder {
+    private final class_2960 id;
+    private Supplier<class_1799> icon = () -> class_1799.field_8037;
+    private Consumer<List<class_1799>> appender = l -> { };
+
+    private FabricItemGroupBuilder(class_2960 id) { this.id = id; }
+
+    public static FabricItemGroupBuilder create(class_2960 id) { return new FabricItemGroupBuilder(id); }
+    public FabricItemGroupBuilder icon(Supplier<class_1799> icon) { this.icon = icon; return this; }
+    public FabricItemGroupBuilder appendItems(Consumer<List<class_1799>> appender) { this.appender = appender; return this; }
+
+    public class_1761 build() {
+        class_1761 group = net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup.builder()
+            .@ICON@(this.icon)
+            .@DNAME@(net.minecraft.class_2561.@TRANS@("itemGroup." + this.id.@NS@() + "." + this.id.@PATH@()))
+            .@ENTRIES@((ctx, entries) -> {
+                List<class_1799> list = new ArrayList<>();
+                this.appender.accept(list);
+                for (class_1799 stack : list) {
+                    entries.@ADD@(stack);
+                }
+            })
+            .@BUILD@();
+        @REG@.@REGISTER@(@REGS@.@FIG@, this.id, group);
+        return group;
+    }
+}
+'''
+
+def item_groups(Q):
+    B = 'net/minecraft/item/ItemGroup$Builder'
+    vals = {
+        '@ICON@': Q.method(B, 'icon'), '@DNAME@': Q.method(B, 'displayName'),
+        '@ENTRIES@': Q.method(B, 'entries'), '@BUILD@': Q.method(B, 'build'),
+        '@ADD@': Q.method('net/minecraft/item/ItemGroup$Entries', 'add', nparams=1, desc_has='class_1799'),
+        '@TRANS@': Q.method('net/minecraft/text/Text', 'translatable', nparams=1),
+        '@NS@': Q.method('net/minecraft/util/Identifier', 'getNamespace'),
+        '@PATH@': Q.method('net/minecraft/util/Identifier', 'getPath'),
+        '@REGISTER@': Q.method('net/minecraft/registry/Registry', 'register', nparams=3, desc_has='class_2960'),
+        '@FIG@': Q.field('net/minecraft/registry/Registries', 'ITEM_GROUP'),
+        '@REGS@': Q.jname('net/minecraft/registry/Registries'),
+        '@REG@': Q.jname('net/minecraft/registry/Registry'),
+    }
+    java = GROUP_TEMPLATE
+    for k, v in vals.items():
+        java = java.replace(k, v)
+    write(os.path.join(SRC, 'xyz/amymialee/amarite/compat/FabricItemGroupBuilder.java'), java)
+    for p in java_files():
+        edit(p, lambda t: t.replace('net.fabricmc.fabric.api.client.itemgroup.FabricItemGroupBuilder',
+                                    'xyz.amymialee.amarite.compat.FabricItemGroupBuilder'))
+    edit(os.path.join(SRC, 'xyz/amymialee/amarite/Amarite.java'),
+         lambda t: re.sub(r'\n\s*\.method_7753\("[^"]*"\)', '', t))
+    for rel in ('amarite/items/AmariteLongswordItem.java', 'amarite/items/AmariteDiscItem.java'):
+        edit(os.path.join(SRC, 'xyz/amymialee/' + rel),
+             lambda t: remove_method(t, r'\n[ \t]*public void method_7850\(class_1761 group, class_2371<class_1799> stacks\) \{')[0])
+    log('item group adapter written')
+
+def migrate_members(fields_new, methods_new, Qnew):
+    """Rewrite static references to members that moved in 1.20.1 (e.g. Registry.ITEM -> Registries.ITEM)."""
+    try:
+        old = Mappings(quilt_jar(latest_1192()))
+    except Exception as e:
+        log('WARN could not load 1.19.2 mappings:', e)
+        return
+    new_by_name = collections.defaultdict(list)
+    for ci, lst in Qnew.fields.items():
+        for (fi, fn, d) in lst:
+            new_by_name[fn].append((ci, fi))
+    old_f = {(ci, fi): (ci, fn) for ci, lst in old.fields.items() for (fi, fn, d) in lst}
+    old_m = {(ci, mi): (ci, mn) for ci, lst in old.methods.items() for (mi, mn, d) in lst}
+    pat = re.compile(r'\b(class_\d+)\.((?:field|method)_\d+)\b')
+    missing = collections.Counter()
+    migrated = collections.Counter()
+
+    def fix(text):
+        def rep(m):
+            tok, member = m.group(1), m.group(2)
+            ci = 'net/minecraft/' + tok
+            if ci not in fields_new:
+                return m.group(0)
+            is_field = member.startswith('field_')
+            if member in (fields_new if is_field else methods_new)[ci]:
+                return m.group(0)
+            if not is_field:
+                missing['%s.%s (was %s)' % (tok, member, old_m.get((ci, member), ('?', '?'))[1])] += 1
+                return m.group(0)
+            oc, fn = old_f.get((ci, member), (None, None))
+            if not fn:
+                missing['%s.%s (unknown in 1.19.2)' % (tok, member)] += 1
+                return m.group(0)
+            names = [fn[:-4], fn] if fn.endswith('_KEY') else [fn]
+            cands = []
+            for nm in names:
+                cands = new_by_name.get(nm, [])
+                if cands:
+                    if fn.endswith('_KEY') and nm == fn[:-4]:
+                        cands = [c for c in cands if Qnew.c_i2n.get(c[0], '').endswith('/RegistryKeys')] or cands
+                    elif old.c_i2n.get(oc, '').endswith('/Registry'):
+                        cands = [c for c in cands if Qnew.c_i2n.get(c[0], '').endswith('/Registries')] or cands
+                    break
+            cands = [c for c in cands if '$' not in c[0]]
+            if len(cands) != 1:
+                missing['%s.%s (was %s.%s, %d candidates)' % (tok, member, old.c_i2n.get(oc, '?').split('/')[-1], fn, len(cands))] += 1
+                return m.group(0)
+            migrated['%s.%s -> %s.%s' % (tok, member, cands[0][0].split('/')[-1], cands[0][1])] += 1
+            return '%s.%s' % (cands[0][0].split('/')[-1], cands[0][1])
+        return pat.sub(rep, text)
+
+    for p in java_files():
+        edit(p, fix)
+    log('static member migration: %d rewritten (%d distinct)' % (sum(migrated.values()), len(migrated)))
+    for k, v in list(migrated.items())[:20]:
+        log('   migrated', v, 'x', k)
+    if missing:
+        log('STATIC MEMBERS MISSING IN 1.20.1 (%d distinct):' % len(missing))
+        for k, v in missing.most_common(60):
+            log('   %3d x %s' % (v, k))
+
+def material_fix(text):
+    text = re.sub(r'QuiltBlockSettings\.of\(class_3614\.\w+,\s*(class_3620\.\w+)\)', r'QuiltBlockSettings.create().mapColor(\1)', text)
+    text = re.sub(r'QuiltBlockSettings\.of\(class_3614\.\w+\)', 'QuiltBlockSettings.create()', text)
+    text = re.sub(r'class_2251\.method_9639\(class_3614\.\w+,\s*(class_3620\.\w+)\)', r'QuiltBlockSettings.create().mapColor(\1)', text)
+    text = re.sub(r'class_2251\.method_9637\(class_3614\.\w+\)', 'QuiltBlockSettings.create()', text)
+    return text
+
+def strip_arsenal(text):
+    text = re.sub(r'\n[ \t]*if \(QuiltLoader\.isModLoaded\("arsenal"\)\) \{[^{}]*\}', '', text)
+    text = re.sub(r'import xyz\.amymialee\.amarite\.compat\.Amarite(?:ArsenalCompat|LongswordFeatureRenderer);\n', '', text)
+    return text
+
+def cleanup_missing_imports(classes):
+    """Drop imports of net.minecraft classes that do not exist in 1.20.1."""
+    gone = collections.Counter()
+
+    def f(t):
+        def rep(m):
+            parts = m.group(1).split('.')
+            internal = 'net/minecraft/' + '$'.join(parts[2:])
+            if internal in classes:
+                return m.group(0)
+            gone[parts[-1]] += 1
+            return ''
+        return re.sub(r'^import (net\.minecraft\.class_[\w.]+);\n', rep, t, flags=re.M)
+
+    for p in java_files():
+        edit(p, f)
+    if gone:
+        log('CLASSES THAT NO LONGER EXIST IN 1.20.1 (imports removed):', dict(gone))
+
 def prepare():
     src = get_inter_tiny()
     make_identity(src)
     patch_gradle()
+    classes, fields_new, methods_new = inter_members(src)
     remove_datagen()
+    for rel in ('xyz/amymialee/amarite/compat/AmariteArsenalCompat.java',
+                'xyz/amymialee/amarite/compat/AmariteLongswordFeatureRenderer.java',
+                'xyz/amymialee/amarite/mixin/client/InGameHudMixin.java'):
+        delete_file(rel)
+    drop_mixin_entry('client.InGameHudMixin')
+    for p in java_files():
+        edit(p, strip_arsenal)
+    apply_refmap()
+    if os.path.exists('src/main/resources/amarite-refmap.json'):
+        os.remove('src/main/resources/amarite-refmap.json')   # Loom generates a fresh one
+    for p in java_files():
+        edit(p, material_fix)
     write(os.path.join(SRC, 'xyz/amymialee/amarite/compat/ParticleBuilders.java'), PARTICLE_SHIM)
     write(os.path.join(SRC, 'xyz/amymialee/amarite/compat/Animator.java'), ANIMATOR_SHIM)
+    Qn = None
+    try:
+        Qn = Mappings(quilt_jar(QM_NEW))
+    except Exception as e:
+        log('WARN could not load 1.20.1 quilt mappings:', repr(e))
+    if Qn:
+        for step in (damage_types, item_groups):
+            try:
+                step(Qn)
+            except Exception as e:
+                log('WARN step %s failed: %r' % (step.__name__, e))
+        try:
+            migrate_members(fields_new, methods_new, Qn)
+        except Exception as e:
+            log('WARN member migration failed: %r' % (e,))
+    cleanup_missing_imports(classes)
     idx = class_index(src)
     unresolved = set()
     added = 0
     for p in java_files():
         added += fix_file(p, idx, unresolved)
-    print('imports added:', added)
+    log('imports added:', added)
     if unresolved:
-        print('UNRESOLVED class tokens:', sorted(unresolved))
+        log('UNRESOLVED class tokens:', sorted(unresolved))
+    write('prepare.out', '\n'.join(OUT) + '\n')
+
 
 # ----------------------------------------------------------------------------- 5. summary
 ERR = re.compile(r'^(?P<file>\S+\.java):(?P<line>\d+): error: (?P<msg>.*)$')
@@ -298,6 +736,13 @@ def summarize():
         out.append('')
         for (msg, sym), locs in sorted(groups.items(), key=lambda kv: -len(kv[1]))[:120]:
             out.append('%4d x  %s%s   e.g. %s' % (len(locs), msg, (' [' + sym + ']') if sym else '', locs[0]))
+    try:
+        prep = read('prepare.out').strip().split('\n')
+        out.append('')
+        out.append('--- PREPARE NOTES ---')
+        out += prep[:90]
+    except FileNotFoundError:
+        pass
     text = '\n'.join(out)
     print(text)
     p = os.environ.get('GITHUB_STEP_SUMMARY')
