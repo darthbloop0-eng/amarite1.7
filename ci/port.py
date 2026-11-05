@@ -538,19 +538,13 @@ public final class FabricItemGroupBuilder {
 }
 '''
 
-def item_groups(Q):
-    B = 'net/minecraft/item/ItemGroup$Builder'
+def item_groups(Q=None):
+    # round 4: hardcoded 1.20.1 intermediary ids (verified against Yarn 1.20.1), no Quilt-name lookups
     vals = {
-        '@ICON@': Q.method(B, 'icon'), '@DNAME@': Q.method(B, ['displayName', 'name', 'title']),
-        '@ENTRIES@': Q.method(B, 'entries'), '@BUILD@': Q.method(B, 'build'),
-        '@ADD@': Q.method('net/minecraft/item/ItemGroup$Entries', 'add', nparams=1, desc_has='class_1799'),
-        '@TRANS@': Q.method('net/minecraft/text/Text', 'translatable', nparams=1),
-        '@NS@': Q.method('net/minecraft/util/Identifier', 'getNamespace'),
-        '@PATH@': Q.method('net/minecraft/util/Identifier', 'getPath'),
-        '@REGISTER@': Q.method('net/minecraft/registry/Registry', 'register', nparams=3, desc_has='class_2960'),
-        '@FIG@': Q.field('net/minecraft/registry/Registries', 'ITEM_GROUP'),
-        '@REGS@': Q.jname('net/minecraft/registry/Registries'),
-        '@REG@': Q.jname('net/minecraft/registry/Registry'),
+        '@ICON@': 'method_47320', '@DNAME@': 'method_47321', '@ENTRIES@': 'method_47317', '@BUILD@': 'method_47324',
+        '@ADD@': 'method_45420', '@TRANS@': 'method_43471', '@NS@': 'method_12836', '@PATH@': 'method_12832',
+        '@REGISTER@': 'method_10230', '@FIG@': 'field_44687',
+        '@REGS@': 'net.minecraft.class_7923', '@REG@': 'net.minecraft.class_2378',
     }
     java = GROUP_TEMPLATE
     for k, v in vals.items():
@@ -559,7 +553,25 @@ def item_groups(Q):
     for p in java_files():
         edit(p, lambda t: t.replace('net.fabricmc.fabric.api.client.itemgroup.FabricItemGroupBuilder',
                                     'xyz.amymialee.amarite.compat.FabricItemGroupBuilder'))
-    log('item group adapter written')
+    log('item group adapter written (hardcoded ids)')
+
+REG_MIGRATE = {
+    'field_16645': 'field_41146', 'field_16792': 'field_41185', 'field_16793': 'field_41162',
+    'field_16794': 'field_41161', 'field_17429': 'field_41187', 'field_23398': 'field_41186',
+    'field_23781': 'field_41190', 'field_25294': 'field_41134', 'field_35090': 'field_41142',
+}
+
+def registry_migrate():
+    pat = re.compile(r'\bclass_2378\.(%s)\b' % '|'.join(REG_MIGRATE))
+    n = [0]
+    def f(t):
+        def rep(m):
+            n[0] += 1
+            return 'class_7923.' + REG_MIGRATE[m.group(1)]
+        return pat.sub(rep, t)
+    for p in java_files():
+        edit(p, f)
+    log('hardcoded registry migrations:', n[0])
 
 def migrate_members(fields_new, methods_new, Qnew):
     """Rewrite static references to members that moved in 1.20.1 (e.g. Registry.ITEM -> Registries.ITEM)."""
@@ -737,19 +749,19 @@ def model_transform(Qn, old):
         edit(p, f)
     log('ModelTransformation.Mode ->', new_i, '(%d constants mapped)' % len(fmap))
 
-def rotation_axis(Qn, old):
-    RA = 'net/minecraft/util/math/RotationAxis'
-    rot = Qn.method(RA, 'rotationDegrees', nparams=1)
-    ra = Qn.cls(RA).split('/')[-1]
-    vec = old.cls('net/minecraft/util/math/Vec3f')
-    old_f = {fi: fn for (fi, fn, d) in old.fields[vec]}
-    deg = old.method('net/minecraft/util/math/Vec3f', 'getDegreesQuaternion')
-    pat = re.compile(r'class_1160\.(field_\d+)\.%s\(' % deg)
+def rotation_axis(Qn=None, old=None):
+    # Vec3f.POSITIVE_X/Y/Z (field_20703/5/7).getDegreesQuaternion (method_23214) -> RotationAxis (class_7833)
+    axes = {'field_20703': 'field_40714', 'field_20705': 'field_40716', 'field_20707': 'field_40718'}
+    pat = re.compile(r'class_1160\.(field_20703|field_20705|field_20707)\.method_23214\(')
+    n = [0]
     def f(t):
-        return pat.sub(lambda m: '%s.%s.%s(' % (ra, Qn.field(RA, old_f[m.group(1)]), rot), t)
+        def rep(m):
+            n[0] += 1
+            return 'net.minecraft.class_7833.%s.rotationDegrees(' % axes[m.group(1)]
+        return pat.sub(rep, t)
     for p in java_files():
         edit(p, f)
-    log('Vec3f rotation -> RotationAxis done')
+    log('Vec3f rotation -> RotationAxis: %d call sites' % n[0])
 
 def vanished_renames(Qn, old, all_f, all_m):
     text = ''.join(read(p) for p in java_files())
@@ -787,11 +799,24 @@ def vanished_renames(Qn, old, all_f, all_m):
         for r in report[:70]:
             log('   ', r)
 
+def step(label, fn, *a):
+    try:
+        return fn(*a)
+    except Exception as e:
+        log('WARN sub-step %s failed: %r' % (label, e))
+
 def misc_rewrites(Qn, methods_new):
-    getworld = 'method_37908' if 'method_37908' in methods_new.get('net/minecraft/class_1297', ()) else Qn.method('net/minecraft/entity/Entity', 'getWorld')
-    isof = Qn.method('net/minecraft/entity/damage/DamageSource', 'isOf', nparams=1)
-    dtypes = Qn.cls('net/minecraft/entity/damage/DamageTypes').split('/')[-1]
-    sound_of = Qn.method('net/minecraft/sound/SoundEvent', 'of', nparams=1)
+    # round 4: hardcoded intermediary ids (Yarn 1.20.1) and every sub-step isolated
+    getworld = 'method_37908'
+    isof = 'method_49708'      # DamageSource.isOf(RegistryKey)
+    dtypes = 'class_8111'      # DamageTypes
+    sound_of = 'method_47908'  # SoundEvent.of(Identifier)
+    try:
+        tagexpr = 'source.method_48789(net.minecraft.class_6862.method_40092(%s.%s, new net.minecraft.class_2960("minecraft", "bypasses_shield")))' % (
+            Qn.jname('net/minecraft/registry/RegistryKeys'), Qn.field('net/minecraft/registry/RegistryKeys', 'DAMAGE_TYPE'))
+    except Exception as e:
+        log('WARN no DAMAGE_TYPE key, isUnblockable -> false:', repr(e))
+        tagexpr = 'false'
     for p in java_files():
         def f(t, p=p):
             t = re.sub(r'\.field_6002\b(?!\s*=[^=])', '.%s()' % getworld, t)
@@ -804,30 +829,35 @@ def misc_rewrites(Qn, methods_new):
             t = t.replace('public class_2596<?> method_18002()', 'public class_2596<net.minecraft.class_2602> method_18002()')
             t = re.sub(r'RenderSystem\.(?:disable|enable)Texture\(\);\s*', '', t)
             t = t.replace('class_3532.method_15383(', 'xyz.amymialee.amarite.compat.Compat.packRgb(')
+            t = re.sub(r'\.method_8482\(', '.method_49804(', t)
+            t = t.replace('!source.method_5504()', '!' + tagexpr)
             if 'extends class_897<' in t:
                 t = t.replace('public class_2960 getTexture(', 'public class_2960 method_3931(')
             return t
         edit(p, f)
-    for rel in ('amarite/registry/AmariteItems.java', 'mialib/MRegistry.java'):
-        edit(sp(rel), lambda t: re.sub(r'\.group\(\s*[A-Za-z_][\w.\[\]]*\s*\)', '', t))
-    edit(sp('amarite/registry/AmariteItems.java'), lambda t: remove_call(t, 'ResourceLoaderEvents.END_DATA_PACK_RELOAD.register('))
-    edit(sp('amarite/client/DiscEntityRenderer.java'),
-         lambda t: t.replace('vertexConsumers, disc.method_5628())', 'vertexConsumers, disc.%s(), disc.method_5628())' % getworld))
-    edit(sp('mialib/MRegistry.java'), lambda t: t.replace('new class_3414(id)', 'class_3414.%s(id)' % sound_of)
-         .replace('class_2378.method_10230(registry,', 'class_2378.method_10230((class_2378<Object>)(Object)registry,'))
-    edit(sp('mialib/MRegistry.java'), lambda t: re.sub(r'[ \t]*DEFAULT_REGISTRIES\.put\(class_\d+\.class, class_2378\.field_\d+\);\n', '', t))
-    edit(sp('amarite/blocks/YellowCarnationPlantBlock.java'), lambda t: t.replace('method_9651(class_1922 ', 'method_9651(class_4538 '))
-    edit(sp('amarite/items/MaskItem.java'), lambda t: t if 'method_7685' in t else t.replace(
+    def groups():
+        for rel in ('amarite/registry/AmariteItems.java', 'mialib/MRegistry.java'):
+            edit(sp(rel), lambda t: re.sub(r'\.group\(\s*[A-Za-z_][\w.\[\]]*\s*\)', '', t))
+    step('group()', groups)
+    step('END_DATA_PACK_RELOAD', lambda: edit(sp('amarite/registry/AmariteItems.java'),
+         lambda t: remove_call(t, 'ResourceLoaderEvents.END_DATA_PACK_RELOAD.register(')))
+    step('DiscEntityRenderer', lambda: edit(sp('amarite/client/DiscEntityRenderer.java'),
+         lambda t: t.replace('vertexConsumers, disc.method_5628())', 'vertexConsumers, disc.%s(), disc.method_5628())' % getworld)))
+    step('MRegistry sound/register', lambda: edit(sp('mialib/MRegistry.java'), lambda t: t.replace('new class_3414(id)', 'class_3414.%s(id)' % sound_of)
+         .replace('class_2378.method_10230(registry,', 'class_2378.method_10230((class_2378<Object>)(Object)registry,')))
+    step('DEFAULT_REGISTRIES', lambda: edit(sp('mialib/MRegistry.java'),
+         lambda t: re.sub(r'[ \t]*DEFAULT_REGISTRIES\.put\(class_\d+\.class, class_2378\.field_\d+\);\n', '', t)))
+    step('Carnation', lambda: edit(sp('amarite/blocks/YellowCarnationPlantBlock.java'), lambda t: t.replace('method_9651(class_1922 ', 'method_9651(class_4538 ')))
+    step('MaskItem', lambda: edit(sp('amarite/items/MaskItem.java'), lambda t: t if 'method_7685' in t else t.replace(
         'public class MaskItem extends TrinketItem implements class_5151 {',
-        'public class MaskItem extends TrinketItem implements class_5151 {\n   public net.minecraft.class_1304 method_7685() {\n      return net.minecraft.class_1304.field_6169;\n   }\n', 1))
-    edit(sp('amarite/mixin/BuddingAmethystMixin.java'), lambda t: remove_annotated_method(t, 'amarite$nonBreaking'))
-    # pressure plate / button / food recipe need new constructor arguments
-    bst = Qn.jname('net/minecraft/block/BlockSetType') + '.' + Qn.field('net/minecraft/block/BlockSetType', 'STONE')
-    edit(sp('amarite/blocks/AmethystPressurePlateBlock.java'), lambda t: t.replace('super(settings);', 'super(settings, %s);' % bst))
-    edit(sp('amarite/blocks/AmethystButtonBlock.java'),
+        'public class MaskItem extends TrinketItem implements class_5151 {\n   public net.minecraft.class_1304 method_7685() {\n      return net.minecraft.class_1304.field_6169;\n   }\n', 1)))
+    step('budding', lambda: edit(sp('amarite/mixin/BuddingAmethystMixin.java'), lambda t: remove_annotated_method(t, 'amarite$nonBreaking')))
+    bst = 'net.minecraft.class_8177.field_42821'   # BlockSetType.STONE
+    step('pressure plate', lambda: edit(sp('amarite/blocks/AmethystPressurePlateBlock.java'), lambda t: t.replace('super(settings);', 'super(settings, %s);' % bst)))
+    step('button', lambda: edit(sp('amarite/blocks/AmethystButtonBlock.java'),
          lambda t: remove_method(t.replace('super(wooden, settings);', 'super(settings, %s, 20, wooden);' % bst),
-                                 r'\n[ \t]*protected class_3414 method_9712\(boolean powered\) \{')[0])
-    cat = Qn.jname('net/minecraft/recipe/book/CraftingRecipeCategory')
+                                 r'\n[ \t]*protected class_3414 method_9712\(boolean powered\) \{')[0]))
+    cat = 'net.minecraft.class_7710'
     def food(t):
         t = t.replace('public AmariteFoodRecipe(class_2960 identifier) {\n      super(identifier);',
                       'public AmariteFoodRecipe(class_2960 identifier, %s category) {\n      super(identifier, category);' % cat)
@@ -836,22 +866,144 @@ def misc_rewrites(Qn, methods_new):
         t = t.replace('public class_1799 craft(@NotNull class_1715 craftingInventory)',
                       'public class_1799 method_8116(@NotNull net.minecraft.class_8566 craftingInventory, net.minecraft.class_5455 registryManager)')
         return t
-    edit(sp('amarite/recipes/AmariteFoodRecipe.java'), food)
-    # armor material: new abstract methods take ArmorItem.Type
-    T = 'net/minecraft/item/ArmorItem$Type'
-    vals = {'@T@': Qn.jname(T), '@SLOT@': Qn.method(T, 'getEquipmentSlot'),
-            '@DUR@': Qn.method('net/minecraft/item/ArmorMaterial', 'getDurability', nparams=1, desc_has=Qn.cls(T)),
-            '@PROT@': Qn.method('net/minecraft/item/ArmorMaterial', 'getProtection', nparams=1, desc_has=Qn.cls(T))}
+    step('food recipe', lambda: edit(sp('amarite/recipes/AmariteFoodRecipe.java'), food))
+    # CCA: decompiled "super.clientTick()" must name the interface
+    step('DiscComponent', lambda: edit(sp('amarite/cca/DiscComponent.java'),
+         lambda t: t.replace('super.clientTick();', 'CommonTickingComponent.super.clientTick();').replace('super.serverTick();', 'CommonTickingComponent.super.serverTick();')))
+    # armor material: new abstract methods take ArmorItem.Type (class_1738$class_8051)
+    T = 'net.minecraft.class_1738.class_8051'
     ins = ('public class MArmorMaterial implements class_1741 {\n'
-           '   public int @DUR@(@T@ type) {\n      return this.armorDurability.apply(type.@SLOT@());\n   }\n\n'
-           '   public int @PROT@(@T@ type) {\n      return this.protection.apply(type.@SLOT@());\n   }\n')
-    for k, v in vals.items():
-        ins = ins.replace(k, v)
-    edit(sp('mialib/templates/MArmorMaterial.java'),
-         lambda t: t if '@DUR@' in t or ins.split('\n')[1] in t else t.replace('public class MArmorMaterial implements class_1741 {\n', ins, 1))
-    write(sp('amarite/screens/MirrorScreen.java'), MIRROR_STUB)
-    write(sp('amarite/compat/Compat.java'), COMPAT_UTIL)
+           '   public int method_48402(%s type) {\n      return this.armorDurability.apply(type.method_48399());\n   }\n\n'
+           '   public int method_48403(%s type) {\n      return this.protection.apply(type.method_48399());\n   }\n') % (T, T)
+    step('armor material', lambda: edit(sp('mialib/templates/MArmorMaterial.java'),
+         lambda t: t if 'method_48402' in t else t.replace('public class MArmorMaterial implements class_1741 {\n', ins, 1)))
+    step('mirror stub', lambda: write(sp('amarite/screens/MirrorScreen.java'), MIRROR_STUB))
+    step('Compat', lambda: write(sp('amarite/compat/Compat.java'), COMPAT_UTIL))
+    step('accessors', accessor_rewrite)
     log('misc 1.20 rewrites applied')
+
+ACC_BEACON = """package xyz.amymialee.mialib.duck;
+
+import java.util.List;
+import net.minecraft.class_1291;
+import net.minecraft.class_2580.class_2581;
+
+public interface BeaconBlockEntityAccessor {
+   int getLevel();
+   class_1291 getPrimary();
+   class_1291 getSecondary();
+   List<class_2581> getField();
+   void setMinY(int v);
+   void setLevel(int v);
+   void setBeamSegments(List<class_2581> v);
+}
+"""
+ACC_BEACON_MIXIN = """package xyz.amymialee.mialib.mixin.accessors;
+
+import java.util.List;
+import net.minecraft.class_1291;
+import net.minecraft.class_2580;
+import net.minecraft.class_2580.class_2581;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Mutable;
+import org.spongepowered.asm.mixin.Shadow;
+import xyz.amymialee.mialib.duck.BeaconBlockEntityAccessor;
+
+@Mixin({class_2580.class})
+public abstract class BeaconBlockEntityAccessorMixin implements BeaconBlockEntityAccessor {
+   @Shadow int field_11803;
+   @Shadow class_1291 field_11795;
+   @Shadow class_1291 field_11799;
+   @Shadow int field_19179;
+   @Shadow @Mutable @Final List<class_2581> field_19177;
+   @Shadow @Mutable @Final List<class_2581> field_19178;
+
+   public int getLevel() { return this.field_11803; }
+   public class_1291 getPrimary() { return this.field_11795; }
+   public class_1291 getSecondary() { return this.field_11799; }
+   public List<class_2581> getField() { return this.field_19178; }
+   public void setMinY(int v) { this.field_19179 = v; }
+   public void setLevel(int v) { this.field_11803 = v; }
+   public void setBeamSegments(List<class_2581> v) { this.field_19177 = v; }
+}
+"""
+ACC_BRM = """package xyz.amymialee.amarite.duck;
+
+import net.minecraft.class_778;
+
+public interface BlockRenderManagerAccessor {
+   class_778 getModelRenderer();
+}
+"""
+ACC_BRM_MIXIN = """package xyz.amymialee.amarite.mixin;
+
+import net.minecraft.class_776;
+import net.minecraft.class_778;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import xyz.amymialee.amarite.duck.BlockRenderManagerAccessor;
+
+@Mixin({class_776.class})
+public abstract class BlockRenderManagerAccessorMixin implements BlockRenderManagerAccessor {
+   @Shadow class_778 field_4170;
+
+   public class_778 getModelRenderer() { return this.field_4170; }
+}
+"""
+
+def accessor_rewrite():
+    """@Accessor targets were rejected by the Mixin AP; use @Shadow mixin classes + plain duck interfaces."""
+    write(sp('mialib/duck/BeaconBlockEntityAccessor.java'), ACC_BEACON)
+    write(sp('mialib/mixin/accessors/BeaconBlockEntityAccessorMixin.java'), ACC_BEACON_MIXIN)
+    write(sp('amarite/duck/BlockRenderManagerAccessor.java'), ACC_BRM)
+    write(sp('amarite/mixin/BlockRenderManagerAccessorMixin.java'), ACC_BRM_MIXIN)
+    delete_file('xyz/amymialee/mialib/mixin/accessors/BeaconBlockEntityAccessor.java')
+    delete_file('xyz/amymialee/amarite/mixin/BlockRenderManagerAccessor.java')
+    for p in java_files():
+        edit(p, lambda t: t.replace('xyz.amymialee.mialib.mixin.accessors.BeaconBlockEntityAccessor', 'xyz.amymialee.mialib.duck.BeaconBlockEntityAccessor')
+                           .replace('xyz.amymialee.amarite.mixin.BlockRenderManagerAccessor', 'xyz.amymialee.amarite.duck.BlockRenderManagerAccessor'))
+    edit('src/main/resources/amarite.mixins.json', lambda t: t.replace('"BlockRenderManagerAccessor"', '"BlockRenderManagerAccessorMixin"'))
+    edit('src/main/resources/mialib.mixins.json', lambda t: t.replace('"accessors.BeaconBlockEntityAccessor"', '"accessors.BeaconBlockEntityAccessorMixin"'))
+    log('accessors converted to @Shadow mixins + duck interfaces')
+
+def remove_inject_for(text, mid):
+    """Remove the whole @Inject method whose target string mentions mid."""
+    i = text.find(mid)
+    if i < 0:
+        return text
+    start = text.rfind('@Inject', 0, i)
+    if start < 0:
+        return text
+    p = text.index('(', start)
+    depth, k = 1, p + 1
+    while k < len(text) and depth:
+        if text[k] == '(':
+            depth += 1
+        elif text[k] == ')':
+            depth -= 1
+        k += 1
+    b = text.index('{', k)
+    depth, k = 1, b + 1
+    while k < len(text) and depth:
+        if text[k] == '{':
+            depth += 1
+        elif text[k] == '}':
+            depth -= 1
+        k += 1
+    ls = text.rfind('\n', 0, start)
+    return text[:ls + 1] + text[k:].lstrip('\n')
+
+def runtime_mixin_cleanup():
+    """Mixins whose targets do not exist in 1.20.1 would crash the game on load (defaultRequire 1)."""
+    delete_file('xyz/amymialee/amarite/mixin/DamageRecordMixin.java')
+    drop_mixin_entry('DamageRecordMixin')
+    def f(t):
+        for mid in ('method_4026', 'method_4010', 'method_4022'):
+            t = remove_inject_for(t, mid)
+        return t
+    edit(sp('mialib/mixin/client/ItemRendererMixin.java'), f)
+    log('removed mixins with vanished targets: DamageRecordMixin, ItemRendererMixin GUI hooks')
 
 def prepare():
     src = get_inter_tiny()
@@ -888,12 +1040,14 @@ def prepare():
     except Exception as e:
         log('WARN could not load quilt mappings:', repr(e))
     if Qn and old:
-        for step, args in ((damage_types, (Qn,)), (item_groups, (Qn,)), (model_transform, (Qn, old)),
-                           (rotation_axis, (Qn, old)), (misc_rewrites, (Qn, methods_new))):
+        for label, fn, args in (('damage_types', damage_types, (Qn,)), ('item_groups', item_groups, (Qn,)),
+                                ('model_transform', model_transform, (Qn, old)), ('rotation_axis', rotation_axis, (Qn, old)),
+                                ('registry_migrate', registry_migrate, ()), ('misc_rewrites', misc_rewrites, (Qn, methods_new)),
+                                ('runtime_mixin_cleanup', runtime_mixin_cleanup, ())):
             try:
-                step(*args)
+                fn(*args)
             except Exception as e:
-                log('WARN step %s failed: %r' % (step.__name__, e))
+                log('WARN step %s failed: %r' % (label, e))
         try:
             migrate_members(fields_new, methods_new, Qn)
             vanished_renames(Qn, old, all_f, all_m)
