@@ -831,7 +831,7 @@ def misc_rewrites(Qn, methods_new):
             t = t.replace('class_3532.method_15383(', 'xyz.amymialee.amarite.compat.Compat.packRgb(')
             t = re.sub(r'\.method_8482\(', '.method_49804(', t)
             t = t.replace('!source.method_5504()', '!' + tagexpr)
-            if 'extends class_897<' in t:
+            if 'extends class_897<' in t or p.endswith('EntityRenderer.java'):
                 t = t.replace('public class_2960 getTexture(', 'public class_2960 method_3931(')
             return t
         edit(p, f)
@@ -843,6 +843,8 @@ def misc_rewrites(Qn, methods_new):
          lambda t: remove_call(t, 'ResourceLoaderEvents.END_DATA_PACK_RELOAD.register(')))
     step('DiscEntityRenderer', lambda: edit(sp('amarite/client/DiscEntityRenderer.java'),
          lambda t: t.replace('vertexConsumers, disc.method_5628())', 'vertexConsumers, disc.%s(), disc.method_5628())' % getworld)))
+    step('MalignancyRenderer', lambda: edit(sp('amarite/client/MalignancyEntityRenderer.java'),
+         lambda t: t.replace('matrixStack, consumers, 0);', 'matrixStack, consumers, malignancy.%s(), 0);' % getworld)))
     step('MRegistry sound/register', lambda: edit(sp('mialib/MRegistry.java'), lambda t: t.replace('new class_3414(id)', 'class_3414.%s(id)' % sound_of)
          .replace('class_2378.method_10230(registry,', 'class_2378.method_10230((class_2378<Object>)(Object)registry,')))
     step('DEFAULT_REGISTRIES', lambda: edit(sp('mialib/MRegistry.java'),
@@ -1005,6 +1007,18 @@ def runtime_mixin_cleanup():
     edit(sp('mialib/mixin/client/ItemRendererMixin.java'), f)
     log('removed mixins with vanished targets: DamageRecordMixin, ItemRendererMixin GUI hooks')
 
+def post_migration_fixes():
+    pat = re.compile(r'(\w+) == (class_8111\.field_\d+)')
+    n = [0]
+    def f(t):
+        def rep(m):
+            n[0] += 1
+            return '%s.method_49708(%s)' % (m.group(1), m.group(2))
+        return pat.sub(rep, t)
+    for p in java_files():
+        edit(p, f)
+    log('post-migration DamageSource comparisons fixed:', n[0])
+
 def prepare():
     src = get_inter_tiny()
     make_identity(src)
@@ -1050,6 +1064,7 @@ def prepare():
                 log('WARN step %s failed: %r' % (label, e))
         try:
             migrate_members(fields_new, methods_new, Qn)
+            post_migration_fixes()
             vanished_renames(Qn, old, all_f, all_m)
         except Exception as e:
             log('WARN member migration failed: %r' % (e,))
