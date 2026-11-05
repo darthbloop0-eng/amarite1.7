@@ -34,8 +34,30 @@ jobs:
           name: build-log
           path: build.log
 
+      - name: Inspect jars
+        if: always()
+        run: |
+          for j in build/devlibs/*.jar build/libs/*.jar; do
+            [ -f "$j" ] || continue
+            echo "=== $j ($(unzip -l "$j" | tail -1))" | tee -a jars.txt
+            unzip -l "$j" | grep -c "\.class" | sed 's/^/class files: /' | tee -a jars.txt
+          done
+          ls -la build/devlibs build/libs 2>&1 | tee -a jars.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jar-report
+          path: jars.txt
+
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: amarite-jar
+          name: amarite-jar-devlibs
+          path: build/devlibs/*.jar
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: amarite-jar-remapped
           path: build/libs/*.jar
