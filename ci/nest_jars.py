@@ -40,8 +40,10 @@ def main():
                     jars.append(nested)
                 # nested mods default to load_type if_required: something must depend on them
                 deps = j['quilt_loader'].setdefault('depends', [])
-                if not any(isinstance(d, dict) and d.get('id') == dep_id for d in deps):
-                    deps.append({'id': dep_id, 'versions': '*'})
+                # lodestonedav bundles MidnightLib as a nested jar, which Quilt only loads when something depends on it
+                for want in (dep_id, 'lodestonedav', 'midnightlib'):
+                    if not any(isinstance(d, dict) and d.get('id') == want for d in deps):
+                        deps.append({'id': want, 'versions': '*'})
                 data = json.dumps(j, indent=2).encode('utf-8')
             if it.filename != nested:
                 zo.writestr(it.filename, data)
