@@ -1006,6 +1006,18 @@ def runtime_mixin_cleanup():
         return t
     edit(sp('mialib/mixin/client/ItemRendererMixin.java'), f)
     log('removed mixins with vanished targets: DamageRecordMixin, ItemRendererMixin GUI hooks')
+    # --- round 5: descriptors inside mixin target strings that changed in 1.20.1 ---
+    for p in java_files():
+        edit(p, lambda t: t.replace('class_809$class_811', 'class_811'))
+    step('NoteBlockMixin', lambda: edit(sp('amarite/mixin/NoteBlockMixin.java'), lambda t: t
+        .replace('class_2766;method_11886()Lnet/minecraft/class_3414;', 'class_2766;method_11886()Lnet/minecraft/class_6880;')
+        .replace('private class_3414 amarite$squeak(class_2766 instance, Operation<class_3414> original,',
+                 'private net.minecraft.class_6880<class_3414> amarite$squeak(class_2766 instance, Operation<net.minecraft.class_6880<class_3414>> original,')
+        .replace('? AmariteSoundEvents.WIN_PLUSHIE', '? net.minecraft.class_6880.method_40223(AmariteSoundEvents.WIN_PLUSHIE)')
+        .replace('(class_3414)original.call(', '(net.minecraft.class_6880<class_3414>)original.call(')))
+    step('EnchantCommandMixin', lambda: edit(sp('mialib/mixin/EnchantCommandMixin.java'),
+        lambda t: t.replace('Ljava/util/Collection;Lnet/minecraft/class_1887;I)I', 'Ljava/util/Collection;Lnet/minecraft/class_6880;I)I')))
+    log('mixin target descriptors updated (NoteBlock, EnchantCommand, ModelTransformationMode)')
 
 def post_migration_fixes():
     pat = re.compile(r'(\w+) == (class_8111\.field_\d+)')
