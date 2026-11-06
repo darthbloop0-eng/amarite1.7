@@ -78,6 +78,12 @@ def patch_gradle():
     s += '\ntasks.withType(Jar).configureEach { duplicatesStrategy = DuplicatesStrategy.EXCLUDE }\n'
     s += "tasks.withType(JavaCompile).configureEach { options.compilerArgs += ['-Xmaxerrs', '5000', '-XDshould-stop.ifError=FLOW'] }\n"
     write('build.gradle', s)
+    # Reach Entity Attributes 2.5.0 needs Minecraft >= 1.20.4; 2.4.0 targets 1.20 / 1.20.1 (same API)
+    if os.path.exists('gradle.properties'):
+        gp = read('gradle.properties')
+        gp = re.sub(r'(?m)^(\s*rea_version\s*=\s*)\S+', r'\g<1>2.4.0', gp)
+        write('gradle.properties', gp)
+        log('reach-entity-attributes pinned to 2.4.0 for 1.20.1')
 
 # ----------------------------------------------------------------------------- 3. shims
 PARTICLE_SHIM = '''package xyz.amymialee.amarite.compat;
