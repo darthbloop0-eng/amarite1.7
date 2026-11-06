@@ -533,8 +533,16 @@ public final class FabricItemGroupBuilder {
             .@ENTRIES@((ctx, entries) -> {
                 List<class_1799> list = new ArrayList<>();
                 this.appender.accept(list);
+                List<class_1799> kept = new ArrayList<>();
                 for (class_1799 stack : list) {
-                    entries.@ADD@(stack);
+                    if (stack == null || stack.method_7960()) continue;
+                    class_1799 one = stack.method_7972();
+                    one.method_7939(1); // 1.20 creative tabs reject stacks whose count is not exactly 1
+                    boolean dup = false;
+                    for (class_1799 k : kept) { if (class_1799.method_7973(k, one)) { dup = true; break; } }
+                    if (dup) continue; // 1.20 creative tabs reject identical stacks added twice
+                    kept.add(one);
+                    entries.@ADD@(one);
                 }
             })
             .@BUILD@();
