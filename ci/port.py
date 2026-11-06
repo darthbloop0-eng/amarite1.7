@@ -853,8 +853,6 @@ def misc_rewrites(Qn, methods_new):
          lambda t: t.replace('matrixStack, consumers, 0);', 'matrixStack, consumers, malignancy.%s(), 0);' % getworld)))
     step('MRegistry sound/register', lambda: edit(sp('mialib/MRegistry.java'), lambda t: t.replace('new class_3414(id)', 'class_3414.%s(id)' % sound_of)
          .replace('class_2378.method_10230(registry,', 'class_2378.method_10230((class_2378<Object>)(Object)registry,')))
-    step('DEFAULT_REGISTRIES', lambda: edit(sp('mialib/MRegistry.java'),
-         lambda t: re.sub(r'[ \t]*DEFAULT_REGISTRIES\.put\(class_\d+\.class, class_2378\.field_\d+\);\n', '', t)))
     step('Carnation', lambda: edit(sp('amarite/blocks/YellowCarnationPlantBlock.java'), lambda t: t.replace('method_9651(class_1922 ', 'method_9651(class_4538 ')))
     step('MaskItem', lambda: edit(sp('amarite/items/MaskItem.java'), lambda t: t if 'method_7685' in t else t.replace(
         'public class MaskItem extends TrinketItem implements class_5151 {',
@@ -1026,6 +1024,9 @@ def runtime_mixin_cleanup():
     log('mixin target descriptors updated (NoteBlock, EnchantCommand, ModelTransformationMode)')
 
 def post_migration_fixes():
+    # registries that still reference class_2378.field_* after migration do not exist in 1.20.1: drop only those
+    step('DEFAULT_REGISTRIES', lambda: edit(sp('mialib/MRegistry.java'),
+         lambda t: re.sub(r'[ \t]*DEFAULT_REGISTRIES\.put\(class_\d+\.class, class_2378\.field_\d+\);\n', '', t)))
     pat = re.compile(r'(\w+) == (class_8111\.field_\d+)')
     n = [0]
     def f(t):
