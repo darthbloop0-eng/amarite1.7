@@ -24,6 +24,10 @@ jobs:
           chmod +x gradlew
           ./gradlew build --no-daemon --stacktrace 2>&1 | tee build.log
 
+      - name: Bundle Reach Entity Attributes (jar-in-jar)
+        if: success()
+        run: python3 ci/nest_jars.py | tee -a jars.txt
+
       - name: Summarize errors
         if: always()
         run: python3 ci/port.py summarize
@@ -61,3 +65,9 @@ jobs:
         with:
           name: amarite-jar-remapped
           path: build/libs/*.jar
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: amarite-jar-bundled
+          path: build/bundled/*.jar
