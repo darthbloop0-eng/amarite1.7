@@ -1143,16 +1143,13 @@ def gameplay_fixes():
         i = t.index('   default void mialib$renderGuiQuad(')
         return t[:i] + MITEM_QUAD
     step('MItem bar', lambda: edit(sp('mialib/interfaces/MItem.java'), mitem))
-    def sword(t):
-        a = t.index('public void mialib$renderCustomBar(')
-        b = t.index('public boolean method_7886', a)
-        m = t[a:b]
-        m = m.replace('mialib$renderCustomBar(class_918 drawContext,', 'mialib$renderCustomBar(net.minecraft.class_332 drawContext,')
-        m = re.sub(r'[ \t]*class_289 tessellator = class_289\.method_1348\(\);\n', '', m)
-        m = re.sub(r'[ \t]*class_287 bufferBuilder = tessellator\.method_1349\(\);\n', '', m)
-        m = re.sub(r'\bbufferBuilder\b', 'drawContext', m)
-        return t[:a] + m + t[b:]
-    step('Longsword bar', lambda: edit(sp('amarite/items/AmariteLongswordItem.java'), sword))
+    def bar(t):
+        t = t.replace('mialib$renderCustomBar(class_918 drawContext,', 'mialib$renderCustomBar(net.minecraft.class_332 drawContext,')
+        t = re.sub(r'[ \t]*class_289 tessellator = class_289\.method_1348\(\);\n', '', t)
+        t = re.sub(r'[ \t]*class_287 bufferBuilder = tessellator\.method_1349\(\);\n', '', t)
+        return re.sub(r'\bbufferBuilder\b', 'drawContext', t)
+    for rel in ('amarite/items/AmariteLongswordItem.java', 'amarite/items/AmariteDiscItem.java'):
+        step('bar ' + rel, lambda rel=rel: edit(sp(rel), bar))
     write(sp('mialib/mixin/client/DrawContextMixin.java'), DRAW_CONTEXT_MIXIN)
     step('mixins.json DrawContext', lambda: edit('src/main/resources/mialib.mixins.json',
          lambda t: t if 'DrawContextMixin' in t else t.replace('"client.ItemRendererMixin",', '"client.DrawContextMixin",\n    "client.ItemRendererMixin",', 1)))
