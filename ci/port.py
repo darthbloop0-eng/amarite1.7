@@ -1046,6 +1046,133 @@ def post_migration_fixes():
         edit(p, f)
     log('post-migration DamageSource comparisons fixed:', n[0])
 
+MITEM_QUAD = """   default void mialib$renderGuiQuad(@NotNull net.minecraft.class_332 ctx, int x, int y, int width, int height, int red, int green, int blue, int alpha) {
+      if (width <= 0 || height <= 0) {
+         return;
+      }
+      ctx.method_51739(net.minecraft.class_1921.method_51785(), x, y, x + width, y + height, (alpha & 0xFF) << 24 | (red & 0xFF) << 16 | (green & 0xFF) << 8 | (blue & 0xFF));
+   }
+}
+"""
+
+DRAW_CONTEXT_MIXIN = """package xyz.amymialee.mialib.mixin.client;
+
+import net.minecraft.class_1799;
+import net.minecraft.class_310;
+import net.minecraft.class_327;
+import net.minecraft.class_332;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.At.Shift;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin({class_332.class})
+public class DrawContextMixin {
+   @Inject(
+      method = {"method_51432(Lnet/minecraft/class_327;Lnet/minecraft/class_1799;IILjava/lang/String;)V"},
+      at = {@At(
+         value = "INVOKE",
+         target = "Lnet/minecraft/class_1799;method_31578()Z",
+         shift = Shift.BEFORE
+      )}
+   )
+   private void mialib$customBar(class_327 renderer, class_1799 stack, int x, int y, String countLabel, CallbackInfo ci) {
+      if (class_310.method_1551().field_1724 != null) {
+         stack.method_7909().mialib$renderCustomBar((class_332)(Object)this, renderer, stack, x, y, countLabel);
+      }
+   }
+}
+"""
+
+MIALIB_INIT = """package xyz.amymialee.mialib;
+
+import org.quiltmc.loader.api.ModContainer;
+import org.quiltmc.qsl.base.api.entrypoint.ModInitializer;
+
+/** Quilt-native entrypoint: runs MiaLib's setup (network receivers etc.) under the 'init' key. */
+public class MiaLibQuiltInit implements ModInitializer {
+   public void onInitialize(ModContainer mod) {
+      new MiaLib().onInitialize();
+   }
+}
+"""
+MIALIB_CLIENT_INIT = """package xyz.amymialee.mialib;
+
+import org.quiltmc.loader.api.ModContainer;
+import org.quiltmc.qsl.base.api.entrypoint.client.ClientModInitializer;
+
+public class MiaLibQuiltClientInit implements ClientModInitializer {
+   public void onInitializeClient(ModContainer mod) {
+      new MiaLibClient().onInitializeClient();
+   }
+}
+"""
+MIALIB_SERVER_INIT = """package xyz.amymialee.mialib;
+
+import org.quiltmc.loader.api.ModContainer;
+import org.quiltmc.qsl.base.api.entrypoint.server.DedicatedServerModInitializer;
+
+public class MiaLibQuiltServerInit implements DedicatedServerModInitializer {
+   public void onInitializeServer(ModContainer mod) {
+      new MiaLibServer().onInitializeServer();
+   }
+}
+"""
+
+def gameplay_fixes():
+    # 1) entity renderers: the decompiled 'render' override kept its named name, so Minecraft never called it
+    n = [0]
+    def ren(t):
+        t2 = re.sub(r'public void render\((?=[^)]*class_4587)', 'public void method_3936(', t)
+        if t2 != t:
+            n[0] += 1
+        return t2
+    for p in java_files():
+        if p.endswith('EntityRenderer.java'):
+            edit(p, ren)
+    log('entity renderer render() -> method_3936:', n[0], 'files')
+
+    # 2) Malignancy collides with blocks (the port had noClip on)
+    step('Malignancy noClip', lambda: edit(sp('amarite/entities/MalignancyEntity.java'),
+         lambda t: t.replace('      this.field_5960 = true;\n', '', 1)))
+
+    # 3) item-slot charge bar: hook DrawContext.drawItemInSlot (1.20) instead of ItemRenderer.renderGuiItemOverlay (<=1.19)
+    def mitem(t):
+        t = t.replace('mialib$renderCustomBar(class_918 drawContext,', 'mialib$renderCustomBar(net.minecraft.class_332 drawContext,')
+        i = t.index('   default void mialib$renderGuiQuad(')
+        return t[:i] + MITEM_QUAD
+    step('MItem bar', lambda: edit(sp('mialib/interfaces/MItem.java'), mitem))
+    def sword(t):
+        a = t.index('public void mialib$renderCustomBar(')
+        b = t.index('public boolean method_7886', a)
+        m = t[a:b]
+        m = m.replace('mialib$renderCustomBar(class_918 drawContext,', 'mialib$renderCustomBar(net.minecraft.class_332 drawContext,')
+        m = re.sub(r'[ \t]*class_289 tessellator = class_289\.method_1348\(\);\n', '', m)
+        m = re.sub(r'[ \t]*class_287 bufferBuilder = tessellator\.method_1349\(\);\n', '', m)
+        m = re.sub(r'\bbufferBuilder\b', 'drawContext', m)
+        return t[:a] + m + t[b:]
+    step('Longsword bar', lambda: edit(sp('amarite/items/AmariteLongswordItem.java'), sword))
+    write(sp('mialib/mixin/client/DrawContextMixin.java'), DRAW_CONTEXT_MIXIN)
+    step('mixins.json DrawContext', lambda: edit('src/main/resources/mialib.mixins.json',
+         lambda t: t if 'DrawContextMixin' in t else t.replace('"client.ItemRendererMixin",', '"client.DrawContextMixin",\n    "client.ItemRendererMixin",', 1)))
+
+    # 4) entrypoints: Quilt only runs init/client_init/server_init for quilt.mod.json mods, not Fabric's main/client/server
+    write(sp('mialib/MiaLibQuiltInit.java'), MIALIB_INIT)
+    write(sp('mialib/MiaLibQuiltClientInit.java'), MIALIB_CLIENT_INIT)
+    write(sp('mialib/MiaLibQuiltServerInit.java'), MIALIB_SERVER_INIT)
+    def qmj(t):
+        j = json.loads(t)
+        ep = j['quilt_loader']['entrypoints']
+        for k in ('main', 'client', 'server', 'fabric-datagen'):
+            ep.pop(k, None)
+        ep['init'] = ['xyz.amymialee.mialib.MiaLibQuiltInit', 'xyz.amymialee.amarite.Amarite']
+        ep['client_init'] = ['xyz.amymialee.mialib.MiaLibQuiltClientInit', 'xyz.amymialee.amarite.AmariteClient']
+        ep['server_init'] = ['xyz.amymialee.mialib.MiaLibQuiltServerInit']
+        return json.dumps(j, indent=2, ensure_ascii=False)
+    step('quilt.mod.json entrypoints', lambda: edit('src/main/resources/quilt.mod.json', qmj))
+    log('gameplay fixes applied (renderers, Malignancy collision, charge bar, entrypoints)')
+
 def prepare():
     src = get_inter_tiny()
     make_identity(src)
@@ -1084,7 +1211,8 @@ def prepare():
         for label, fn, args in (('damage_types', damage_types, (Qn,)), ('item_groups', item_groups, (Qn,)),
                                 ('model_transform', model_transform, (Qn, old)), ('rotation_axis', rotation_axis, (Qn, old)),
                                 ('registry_migrate', registry_migrate, ()), ('misc_rewrites', misc_rewrites, (Qn, methods_new)),
-                                ('runtime_mixin_cleanup', runtime_mixin_cleanup, ())):
+                                ('runtime_mixin_cleanup', runtime_mixin_cleanup, ()),
+                                ('gameplay_fixes', gameplay_fixes, ())):
             try:
                 fn(*args)
             except Exception as e:
